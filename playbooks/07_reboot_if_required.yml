@@ -1,0 +1,109 @@
+---
+# =============================================================================
+# Playbook: 07_reboot_if_required.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Reboot Ubuntu student computers ONLY when the operating system indicates
+#   that a reboot is required after package updates.
+#
+# Safety:
+#   - Requires sudo privileges.
+#   - Does NOT reboot unnecessarily.
+#   - Checks for /var/run/reboot-required first.
+#   - Safe to execute multiple times.
+#   - Should NOT be executed during active classroom sessions unless approved.
+#
+# Recommended workflow:
+#
+#   1. Update packages
+#   2. Verify update completed successfully
+#   3. Test reboot on ONE computer:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/07_reboot_if_required.yml --limit pc1
+#
+#   4. Verify the machine reconnects successfully.
+#
+#   5. Execute on remaining laboratory computers.
+#
+# Example:
+#
+#   ansible-playbook -i inventory.ini playbooks/07_reboot_if_required.yml
+#
+# =============================================================================
+
+- name: Reboot Ubuntu systems only when required
+  hosts: students
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    ###########################################################################
+    # Check reboot requirement
+    ###########################################################################
+
+    - name: Check whether Ubuntu requests a reboot
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    ###########################################################################
+    # Inform user when reboot is not required
+    ###########################################################################
+
+    - name: Report that reboot is not required
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "No reboot required."
+          - "/var/run/reboot-required does not exist."
+
+      when: not reboot_required.stat.exists
+      changed_when: false
+
+    ###########################################################################
+    # Reboot when required
+    ###########################################################################
+
+    - name: Reboot system when required
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        connect_timeout: 10
+        post_reboot_delay: 15
+        test_command: uptime
+
+      when: reboot_required.stat.exists
+
+    ###########################################################################
+    # Report successful reboot
+    ###########################################################################
+
+    - name: Confirm reboot completed successfully
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "System reboot completed successfully."
+          - "The host has reconnected to Ansible."
+
+      when: reboot_required.stat.exists
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+# Notes
+#
+# Ubuntu creates /var/run/reboot-required whenever important system updates
+# require a reboot before they become fully active.
+#
+# This playbook DOES NOT force reboots.
+#
+# Reboots only occur when Ubuntu explicitly requests them.
+#
+# Best Practice:
+#
+#   • Run after 03_update_system.yml
+#   • Execute outside teaching hours whenever possible.
+#   • Test on one machine before rebooting the entire laboratory.
+#
+# -----------------------------------------------------------------------------

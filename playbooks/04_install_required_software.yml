@@ -1,0 +1,72 @@
+---
+# =============================================================================
+# Playbook: 04_install_required_software.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Install commonly required software packages on Ubuntu student computers.
+#
+# Safety:
+#   - Requires sudo privileges.
+#   - Uses the Ansible apt module (idempotent).
+#   - Existing packages are NOT reinstalled.
+#   - Does NOT remove existing software.
+#   - Does NOT reboot the computer.
+#
+# Recommended workflow:
+#   1. Test on one computer first:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/04_install_required_software.yml --limit pc1
+#
+#   2. Verify everything works correctly.
+#
+#   3. Run on the remaining lab computers.
+#
+# To customize:
+#   Simply edit the "required_packages" list below.
+#
+# Example:
+#   ansible-playbook -i inventory.ini playbooks/04_install_required_software.yml
+# =============================================================================
+
+- name: Install required software packages
+  hosts: students
+  become: true
+  gather_facts: false
+
+  vars:
+
+    required_packages:
+      - vim
+      - nano
+      - htop
+      - curl
+      - wget
+      - git
+      - tree
+      - net-tools
+      - python3
+      - python3-pip
+
+  tasks:
+
+    - name: Refresh APT package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install required software packages
+      ansible.builtin.apt:
+        name: "{{ required_packages }}"
+        state: present
+
+    - name: Display installation summary
+      ansible.builtin.debug:
+        msg:
+          - "Software installation completed successfully."
+          - "Host: {{ inventory_hostname }}"
+          - "Packages requested:"
+          - "{{ required_packages }}"
+
+      changed_when: false

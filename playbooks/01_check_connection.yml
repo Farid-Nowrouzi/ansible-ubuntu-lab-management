@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# Playbook: 01_check_connection.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Verify that the teacher/main computer can communicate with all student
+#   computers through Ansible over SSH.
+#
+# Safety:
+#   - Read-only.
+#   - Does not require sudo.
+#   - Does not modify, install, delete, update, or reboot anything.
+#
+# Recommended use:
+#   Run this before any maintenance task.
+#
+# Example:
+#   ansible-playbook -i inventory.ini playbooks/01_check_connection.yml
+#   ansible-playbook -i inventory.ini playbooks/01_check_connection.yml --limit pc1
+# =============================================================================
+
+- name: Check Ansible connectivity to student lab computers
+  hosts: students
+  gather_facts: false
+
+  tasks:
+    - name: Verify Ansible can reach the host over SSH
+      ansible.builtin.ping:
+
+    - name: Show successful connection message
+      ansible.builtin.debug:
+        msg: "Connection successful: {{ inventory_hostname }} is reachable via Ansible over SSH."

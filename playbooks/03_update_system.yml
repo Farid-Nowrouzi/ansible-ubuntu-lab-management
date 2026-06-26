@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# Playbook: 03_update_system.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Safely update Ubuntu package information and upgrade installed packages
+#   to their latest available versions.
+#
+# Safety:
+#   - Requires sudo privileges (become: true).
+#   - Does NOT reboot computers.
+#   - Rebooting is handled separately by:
+#       playbooks/07_reboot_if_required.yml
+#
+# Recommended workflow:
+#   1. Test on one computer:
+#        ansible-playbook -i inventory.ini playbooks/03_update_system.yml --limit pc1
+#
+#   2. Verify everything works correctly.
+#
+#   3. Run on the remaining computers.
+#
+# Example:
+#   ansible-playbook -i inventory.ini playbooks/03_update_system.yml
+# =============================================================================
+
+- name: Update Ubuntu systems safely
+  hosts: students
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Refresh APT package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade installed packages
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: false
+        autoclean: false
+
+    - name: Check whether a reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Display update summary
+      ansible.builtin.debug:
+        msg:
+          - "Package update completed successfully."
+          - "Host: {{ inventory_hostname }}"
+          - "Reboot required: {{ reboot_required.stat.exists }}"
+          - "Run playbooks/07_reboot_if_required.yml only if a reboot is required."
+
+      changed_when: false

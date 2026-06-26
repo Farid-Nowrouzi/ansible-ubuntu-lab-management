@@ -1,0 +1,56 @@
+---
+# =============================================================================
+# Playbook: 02_collect_lab_status.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Collect useful system information from student lab computers.
+#
+# Safety:
+#   - Read-only.
+#   - Does not install, update, delete, or reboot anything.
+#   - Useful before maintenance to understand the current lab state.
+#
+# Example:
+#   ansible-playbook -i inventory.ini playbooks/02_collect_lab_status.yml
+#   ansible-playbook -i inventory.ini playbooks/02_collect_lab_status.yml --limit pc1
+# =============================================================================
+
+- name: Collect system status from student lab computers
+  hosts: students
+  gather_facts: true
+
+  tasks:
+    - name: Build readable lab status summary
+      ansible.builtin.set_fact:
+        lab_status:
+          host: "{{ inventory_hostname }}"
+          hostname: "{{ ansible_facts['hostname'] | default('unknown') }}"
+          fqdn: "{{ ansible_facts['fqdn'] | default('unknown') }}"
+          os: "{{ ansible_facts['distribution'] | default('unknown') }} {{ ansible_facts['distribution_version'] | default('unknown') }}"
+          kernel: "{{ ansible_facts['kernel'] | default('unknown') }}"
+          architecture: "{{ ansible_facts['architecture'] | default('unknown') }}"
+          ipv4_addresses: "{{ ansible_facts.get('all_ipv4_addresses', []) }}"
+          memory_mb: "{{ ansible_facts['memtotal_mb'] | default('unknown') }}"
+          processor_cores: "{{ ansible_facts['processor_cores'] | default('unknown') }}"
+          processor_count: "{{ ansible_facts['processor_count'] | default('unknown') }}"
+          uptime_seconds: "{{ ansible_facts['uptime_seconds'] | default('unknown') }}"
+          mounts: "{{ ansible_facts['mounts'] | default([]) }}"
+      changed_when: false
+
+    - name: Display readable lab status summary
+      ansible.builtin.debug:
+        msg:
+          - "Host alias: {{ lab_status.host }}"
+          - "Hostname: {{ lab_status.hostname }}"
+          - "FQDN: {{ lab_status.fqdn }}"
+          - "Operating system: {{ lab_status.os }}"
+          - "Kernel: {{ lab_status.kernel }}"
+          - "Architecture: {{ lab_status.architecture }}"
+          - "IPv4 addresses: {{ lab_status.ipv4_addresses }}"
+          - "Memory total (MB): {{ lab_status.memory_mb }}"
+          - "Processor cores: {{ lab_status.processor_cores }}"
+          - "Processor count: {{ lab_status.processor_count }}"
+          - "Uptime seconds: {{ lab_status.uptime_seconds }}"
+          - "Mounts: {{ lab_status.mounts }}"
+      changed_when: false
