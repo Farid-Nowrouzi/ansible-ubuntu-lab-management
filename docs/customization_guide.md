@@ -76,12 +76,12 @@ ansible-playbook -i inventory.ini playbooks/04_install_required_software.yml --l
 Edit:
 
 ```yaml
-shared_materials_destination: /home/student/Lab_Materials
-shared_materials_owner: student
-shared_materials_group: student
+shared_materials_destination: "/home/{{ ansible_user }}/Lab_Materials"
+shared_materials_owner: "{{ ansible_user }}"
+shared_materials_group: "{{ ansible_user }}"
 ```
 
-Use a destination that exists under the correct student account, or make sure the configured owner and group are valid on the student PCs.
+The default uses the Ansible login user so files are copied into that user's home directory on each student PC.
 
 ## Change Update Behavior
 

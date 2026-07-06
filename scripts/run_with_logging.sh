@@ -50,6 +50,23 @@ print_error() {
   echo "ERROR: $*" >&2
 }
 
+sum_recap_value() {
+  local key="$1"
+  local file="$2"
+
+  awk -v key="$key" '
+    $0 ~ /:[[:space:]]/ && $0 ~ key "=" {
+      for (i = 1; i <= NF; i++) {
+        split($i, field, "=")
+        if (field[1] == key) {
+          total += field[2]
+        }
+      }
+    }
+    END { print total + 0 }
+  ' "$file"
+}
+
 main() {
   if [ "$#" -lt 1 ]; then
     show_usage
@@ -164,13 +181,33 @@ main() {
     status="${PIPESTATUS[0]}"
   fi
 
+  local unreachable_count=0
+  local failed_count=0
+
+  if [ -f "$log_file" ]; then
+    unreachable_count="$(sum_recap_value "unreachable" "$log_file")"
+    failed_count="$(sum_recap_value "failed" "$log_file")"
+  fi
+
   echo
   echo "------------------------------------------------------------"
   if [ "$status" -eq 0 ]; then
     echo "Result: SUCCESS"
+  elif [ "$unreachable_count" -gt 0 ] && [ "$failed_count" -eq 0 ]; then
+    echo "Result: COMPLETED WITH UNREACHABLE HOSTS"
+    echo "Some selected PCs were offline or unreachable."
+    echo "All reachable PCs completed their tasks."
+    echo "Check the play recap above and the saved log file for details."
+    echo "Ansible exit code: $status"
   else
     echo "Result: FAILED"
     echo "Exit code: $status"
+    if [ "$unreachable_count" -gt 0 ]; then
+      echo "Unreachable hosts were reported. Check the play recap above."
+    fi
+    if [ "$failed_count" -gt 0 ]; then
+      echo "One or more reachable hosts had task failures."
+    fi
   fi
 
   echo "Log saved to:"

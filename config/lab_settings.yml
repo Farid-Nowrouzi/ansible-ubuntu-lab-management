@@ -98,13 +98,14 @@ apt_cache_valid_time_seconds: 3600
 #   This does not share the whole teacher/control computer.
 #
 # Important:
-#   If the student username is not "student", update owner/group below.
+#   The destination uses ansible_user so files go to the SSH user's home
+#   directory on each student PC.
 # ------------------------------------------------------------------------------
 
 shared_materials_source: "shared_materials/"
-shared_materials_destination: "/home/student/Lab_Materials"
-shared_materials_owner: "student"
-shared_materials_group: "student"
+shared_materials_destination: "/home/{{ ansible_user }}/Lab_Materials"
+shared_materials_owner: "{{ ansible_user }}"
+shared_materials_group: "{{ ansible_user }}"
 shared_materials_directory_mode: "0755"
 shared_materials_file_mode: "0644"
 

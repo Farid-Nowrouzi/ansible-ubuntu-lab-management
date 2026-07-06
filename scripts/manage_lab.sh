@@ -195,6 +195,12 @@ ask_auth_args() {
     read -r -p "Advanced options: " advanced_text || advanced_text=""
     advanced_text="$(trim_input "$advanced_text")"
 
+    case "${advanced_text,,}" in
+      ""|n|no|none)
+        return 0
+        ;;
+    esac
+
     if [ -n "$advanced_text" ]; then
       # Simple splitting is intentional for optional CLI flags.
       # Do not enter secrets/passwords here.
@@ -209,6 +215,11 @@ ask_auth_args() {
           -i|--inventory|--inventory=*|-l|--limit|--limit=*)
             echo "ERROR: Do not enter inventory or limit options as advanced options."
             echo "Use the menu target prompt instead."
+            return 1
+            ;;
+          --ask-pass|--ask-become-pass)
+            echo "ERROR: Do not enter password-prompt options as advanced options."
+            echo "Use the menu authentication prompts instead."
             return 1
             ;;
           *password*|*passwd*|*secret*)
@@ -237,10 +248,18 @@ confirm_run_action() {
     echo "  - You already tested on one PC."
     echo "  - You understand selected PCs may restart."
     echo
-    read -r -p "Type YES to run this reboot check: " answer || answer=""
+    echo "For safety, this confirmation is case-sensitive."
+    read -r -p "Type YES in capital letters to continue, or press Enter to cancel: " answer || answer=""
     answer="$(trim_input "$answer")"
-    [ "$answer" = "YES" ]
-    return
+    if [ "$answer" = "YES" ]; then
+      return 0
+    fi
+    if [ "${answer,,}" = "yes" ]; then
+      echo "Reboot cancelled. For safety, this action requires YES in capital letters."
+    else
+      echo "Reboot cancelled."
+    fi
+    return 1
   fi
 
   echo "WARNING: $label can change student computers."
@@ -343,9 +362,9 @@ run_playbook() {
   if [ "$status" -eq 0 ]; then
     echo "Action completed successfully."
   else
-    echo "Action finished with errors."
+    echo "Action did not finish with a clean success."
     echo "Exit code: $status"
-    echo "Check the output above and any saved report/log file."
+    echo "Check the result message above and any saved report/log file."
   fi
 
   pause

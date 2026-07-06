@@ -97,9 +97,18 @@ All notable changes to this project will be documented in this file.
 - Improved logging helper error handling for interrupted runs and unwritable `reports/` directories.
 - Updated professor-facing documentation to describe the menu exit behavior and final confirmation step.
 
-## Planned Improvements
+## [0.7.0] - Final Real-Lab Validation
 
-- Add tested lab status report examples.
-- Add more real-lab troubleshooting examples after final testing.
-- Adjust package lists based on actual course needs.
-- Improve professor handover notes after feedback.
+### Changed
+
+- Polished `FINAL_TEST_REPORT.md` into a clean final validation report.
+- Updated shared-materials settings to use the Ansible login user dynamically for the destination, owner, and group.
+- Improved advanced-options handling so blank, `n`, `no`, and `none` are treated as no advanced options.
+- Clarified the case-sensitive capital `YES` reboot confirmation.
+- Improved unreachable-host result messaging while preserving the real Ansible exit code.
+- Updated project status to reflect completed real-lab validation and handover readiness.
+
+### Notes
+
+- Real lab validation confirmed that all reachable hosts completed the tested workflows successfully.
+- One configured host was unreachable/offline during full-group testing and should be checked separately as normal lab maintenance.
