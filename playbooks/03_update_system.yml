@@ -10,6 +10,7 @@
 # Safety:
 #   - Requires sudo privileges (become: true).
 #   - Does NOT reboot computers.
+#   - Do NOT run during active class time.
 #   - Rebooting is handled separately by:
 #       playbooks/07_reboot_if_required.yml
 #
@@ -30,18 +31,29 @@
   become: true
   gather_facts: false
 
+  vars_files:
+    - ../config/lab_settings.yml
+
   tasks:
 
     - name: Refresh APT package cache
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
+      when: update_package_cache | bool
 
     - name: Upgrade installed packages
       ansible.builtin.apt:
         upgrade: dist
         autoremove: false
         autoclean: false
+      when: upgrade_system_packages | bool
+
+    - name: Remove unused package dependencies after update
+      ansible.builtin.apt:
+        autoremove: true
+        autoclean: false
+      when: autoremove_unused_packages | bool
 
     - name: Check whether a reboot is required
       ansible.builtin.stat:
@@ -53,6 +65,9 @@
         msg:
           - "Package update completed successfully."
           - "Host: {{ inventory_hostname }}"
+          - "Package cache refreshed: {{ update_package_cache }}"
+          - "System packages upgraded: {{ upgrade_system_packages }}"
+          - "Unused packages removed: {{ autoremove_unused_packages }}"
           - "Reboot required: {{ reboot_required.stat.exists }}"
           - "Run playbooks/07_reboot_if_required.yml only if a reboot is required."
 

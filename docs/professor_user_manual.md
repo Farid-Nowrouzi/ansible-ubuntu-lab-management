@@ -76,9 +76,50 @@ cd linux-lab-management
 
 ---
 
-## Step 2 — Verify connectivity
+## Step 2 — Run the preflight check
 
-Before running any maintenance tasks, verify that all computers are reachable.
+Before running any maintenance tasks, verify that the lab is ready and safe.
+
+Run:
+
+```
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
+```
+
+This playbook is read-only and checks:
+
+* inventory group presence
+* SSH connectivity
+* Python 3 availability
+* sudo/become access
+* Ubuntu compatibility
+* available disk space
+* memory level
+* basic host identity information
+
+If any host fails the preflight check, do not continue with updates, installs, cleanup, or reboot tasks until the issue is understood.
+
+The easiest way to operate the toolkit is the professor menu:
+
+```
+./labmanage
+```
+
+The menu asks for confirmation before update, install, copy, cleanup, or reboot actions.
+
+In the menu, enter a number from `1` to `9`. Type `q`, `quit`, or `exit` to leave the menu.
+
+Normal lab settings such as packages, shared-materials destination, cleanup options, update behavior, preflight thresholds, and reboot timeout are controlled in:
+
+```
+config/lab_settings.yml
+```
+
+---
+
+## Step 3 — Verify connectivity
+
+After the preflight check passes, verify that all computers are reachable.
 
 Run:
 
@@ -92,7 +133,7 @@ If one or more computers are unreachable, consult the Troubleshooting Guide.
 
 ---
 
-## Step 3 — Collect current laboratory status
+## Step 4 — Collect current laboratory status
 
 Gather information about each computer.
 
@@ -114,7 +155,7 @@ No system changes are made.
 
 ---
 
-## Step 4 — Update Ubuntu systems
+## Step 5 — Update Ubuntu systems
 
 To update installed packages:
 
@@ -130,9 +171,11 @@ This updates:
 
 Rebooting is intentionally handled separately.
 
+Do not run this during active class time. Test one PC first with `--limit pc1`.
+
 ---
 
-## Step 5 — Install required software
+## Step 6 — Install required software
 
 To install software required for laboratory activities:
 
@@ -147,11 +190,13 @@ Examples include:
 * Git
 * Additional educational software
 
-The list of packages can easily be modified inside the playbook.
+The list of packages can easily be modified in `config/lab_settings.yml`.
+
+Do not run this during active class time unless the professor approves it. Test one PC first with `--limit pc1`.
 
 ---
 
-## Step 6 — Distribute laboratory materials
+## Step 7 — Distribute laboratory materials
 
 To copy teaching material to every student computer:
 
@@ -174,9 +219,13 @@ shared_materials/
 
 before running the playbook.
 
+The destination path and file ownership are controlled in `config/lab_settings.yml`.
+
+Test one PC first before copying materials to the full lab.
+
 ---
 
-## Step 7 — Clean laboratory computers
+## Step 8 — Clean laboratory computers
 
 Routine maintenance can be performed using:
 
@@ -191,9 +240,13 @@ Current tasks include:
 
 No user files are deleted.
 
+Cleanup options are controlled in `config/lab_settings.yml`.
+
+Do not run this during active class time. Test one PC first with `--limit pc1`.
+
 ---
 
-## Step 8 — Reboot only when necessary
+## Step 9 — Reboot only when necessary
 
 Some updates require a restart.
 
@@ -204,6 +257,8 @@ ansible-playbook -i inventory.ini playbooks/07_reboot_if_required.yml
 ```
 
 Only computers that actually require a reboot will restart.
+
+Confirm the timing before rebooting. Never reboot during active teaching unless explicitly approved.
 
 ---
 
@@ -240,13 +295,14 @@ When adding a new laboratory computer:
 
 For routine laboratory maintenance, use the following order:
 
-1. Check connections
-2. Collect system information
-3. Install required software (if needed)
-4. Update Ubuntu packages
-5. Copy teaching materials
-6. Clean unused packages
-7. Reboot only if required
+1. Run the preflight check
+2. Check connections
+3. Collect system information
+4. Install required software (if needed)
+5. Update Ubuntu packages
+6. Copy teaching materials
+7. Clean unused packages
+8. Reboot only if required
 
 This sequence minimizes unnecessary interruptions.
 
@@ -289,10 +345,10 @@ New playbooks can be added inside:
 playbooks/
 ```
 
-Additional software packages may be added by modifying:
+Common lab settings may be changed by modifying:
 
 ```
-04_install_required_software.yml
+config/lab_settings.yml
 ```
 
 Teaching materials can be updated simply by replacing files inside:
@@ -302,6 +358,8 @@ shared_materials/
 ```
 
 No changes to the rest of the project are required.
+
+Use `inventory.ini` only for the student PC list and connection details. Use `config/lab_settings.yml` for packages and maintenance settings.
 
 ---
 
@@ -320,6 +378,18 @@ Reports may be stored inside:
 
 ```
 reports/
+```
+
+To save terminal output automatically:
+
+```
+bash scripts/run_with_logging.sh playbooks/00_preflight_check.yml
+```
+
+After final real-lab testing, fill:
+
+```
+FINAL_TEST_REPORT.md
 ```
 
 Maintaining records helps future administrators understand previous maintenance activities.
@@ -349,8 +419,12 @@ This project includes several supporting documents.
 
 | Document                 | Purpose                                           |
 | ------------------------ | ------------------------------------------------- |
+| professor_handover.md    | Main professor handover guide                     |
+| project_overview.md      | Short architecture overview                       |
+| adding_new_pc.md         | Steps for adding a new lab computer               |
 | setup_guide.md           | Initial installation and first-time configuration |
 | maintenance_checklist.md | Routine maintenance checklist                     |
+| customization_guide.md   | Safe package and settings customization           |
 | troubleshooting.md       | Common problems and solutions                     |
 | PROJECT_STATUS.md        | Current project progress                          |
 | CHANGELOG.md             | History of project changes                        |

@@ -26,6 +26,7 @@ ls inventory.ini
 ```
 
 * [ ] Never run update, install, cleanup, or reboot playbooks during active class time.
+* [ ] Run the preflight check before maintenance.
 * [ ] Test on one PC first using `--limit`.
 * [ ] Do not upload `inventory.ini`, passwords, or SSH keys to GitHub.
 * [ ] Ask for approval before rebooting machines.
@@ -40,6 +41,12 @@ Run this before doing bigger actions.
 
 ```bash
 ansible -i inventory.ini students --list-hosts
+```
+
+* [ ] Run preflight check:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
 ```
 
 * [ ] Check Ansible connectivity:
@@ -96,6 +103,12 @@ ls ~/Lab_Materials
 ## 4. Weekly Maintenance Checklist
 
 Recommended once per week.
+
+* [ ] Run preflight check:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
+```
 
 * [ ] Run Ansible ping:
 
@@ -384,32 +397,37 @@ Teacher/Main PC:
 
 ```bash
 command here
-````
+```
 
 ## Successful Machines
 
-* pc1
-* pc2
+- pc1
+- pc2
 
 ## Failed or Unreachable Machines
 
-* pc3:
+- pc3:
 
 ## Changes Made
 
-* Updated packages
-* Installed software
-* Copied materials
+- Updated packages
+- Installed software
+- Copied materials
 
 ## Issues Found
 
-*
+-
 
 ## Follow-Up Actions
 
-*
-
+-
 ````
+
+For final lab validation, fill:
+
+```text
+FINAL_TEST_REPORT.md
+```
 
 ---
 
@@ -425,10 +443,10 @@ testing safely,
 recording results,
 avoiding unnecessary risk,
 and leaving clear notes for the next person.
-````
+```
 
 Always follow:
 
 ```text
-One PC first → small group → full lab
+Preflight first -> one PC first -> small group -> full lab
 ```

@@ -16,6 +16,7 @@ The goal of this setup is to allow one central computer, called the teacher/main
 
 After the setup is complete, the teacher/main computer can:
 
+* run a safe preflight check before maintenance;
 * check whether student PCs are reachable;
 * update Ubuntu packages;
 * install required software;
@@ -447,6 +448,18 @@ ansible --version
 
 If this works, the teacher/main computer is ready to run Ansible commands.
 
+The professor can later open the menu with:
+
+```bash
+./labmanage
+```
+
+If Linux says the launcher is not executable, run:
+
+```bash
+chmod +x labmanage scripts/manage_lab.sh scripts/run_with_logging.sh
+```
+
 ---
 
 ## 13. Step 9 — Create or Clone the Project Folder
@@ -475,7 +488,9 @@ README.md
 ansible.cfg
 inventory.example.ini
 inventory.ini
+labmanage
 playbooks/
+scripts/
 docs/
 shared_materials/
 reports/
@@ -564,7 +579,11 @@ If a machine fails, check:
 
 ## 16. Step 12 — Test One PC First
 
-Before running playbooks on the whole lab, test one PC.
+Before running playbooks on the whole lab, run the safe preflight check and then test one PC.
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
+```
 
 Example:
 
@@ -583,6 +602,7 @@ This is safer than running immediately on every student PC.
 Recommended safe first tests:
 
 ```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml --limit pc1
 ansible-playbook -i inventory.ini playbooks/01_check_connection.yml --limit pc1
 ansible-playbook -i inventory.ini playbooks/02_collect_lab_status.yml --limit pc1
 ```
@@ -598,7 +618,21 @@ ansible-playbook -i inventory.ini playbooks/02_collect_lab_status.yml
 
 ## 17. Step 13 — Run Core Playbooks
 
-### 17.1 Check Connection
+### 17.1 Run Preflight Check
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
+```
+
+Purpose:
+
+```text
+Checks inventory, SSH, Python 3, sudo, OS compatibility, disk space, memory, and host identity before maintenance.
+```
+
+---
+
+### 17.2 Check Connection
 
 ```bash
 ansible-playbook -i inventory.ini playbooks/01_check_connection.yml
@@ -612,7 +646,7 @@ Confirms that Ansible can reach the student PCs.
 
 ---
 
-### 17.2 Collect Lab Status
+### 17.3 Collect Lab Status
 
 ```bash
 ansible-playbook -i inventory.ini playbooks/02_collect_lab_status.yml
@@ -626,7 +660,7 @@ Collects useful information such as hostname, IP address, Ubuntu version, memory
 
 ---
 
-### 17.3 Install Required Software
+### 17.4 Install Required Software
 
 Test on one PC first:
 
@@ -656,7 +690,7 @@ and update the `required_packages` list.
 
 ---
 
-### 17.4 Copy Shared Materials
+### 17.5 Copy Shared Materials
 
 Put approved files inside:
 
@@ -682,7 +716,7 @@ This does not copy the whole teacher PC. It only copies files placed inside the 
 
 ---
 
-### 17.5 Update Ubuntu Packages
+### 17.6 Update Ubuntu Packages
 
 Run only after professor/lab approval.
 
@@ -702,7 +736,7 @@ This playbook updates packages but should not reboot machines automatically.
 
 ---
 
-### 17.6 Clean Package Cache
+### 17.7 Clean Package Cache
 
 ```bash
 ansible-playbook -i inventory.ini playbooks/06_clean_lab_computers.yml
@@ -718,7 +752,7 @@ This should not delete student files.
 
 ---
 
-### 17.7 Reboot Only If Required
+### 17.8 Reboot Only If Required
 
 Run only when safe and approved:
 
@@ -747,12 +781,15 @@ Use this order during real lab testing:
 4. Passwordless SSH test
 5. Ansible inventory list
 6. Ansible ping
-7. 01_check_connection.yml on one PC
-8. 02_collect_lab_status.yml on one PC
-9. Install/copy/update playbooks on one PC
-10. Run safe playbooks on all reachable PCs
-11. Record results in reports/
-12. Update PROJECT_STATUS.md
+7. 00_preflight_check.yml
+8. 01_check_connection.yml on one PC
+9. 02_collect_lab_status.yml on one PC
+10. Install/copy/update playbooks on one PC
+11. Expand to 2-3 PCs
+12. Run on all reachable PCs only when safe
+13. Save results in reports/
+14. Fill FINAL_TEST_REPORT.md
+15. Update PROJECT_STATUS.md
 ```
 
 ---
@@ -892,14 +929,12 @@ This setup is not intended to be a full enterprise management platform.
 
 It is a practical, documented, reusable Ansible-based toolkit for managing Ubuntu student computers from one central teacher/main computer.
 
-Future extensions may include:
+Future improvements should stay practical for the lab, such as:
 
-* Docker-based teaching environments;
-* shared folders;
-* Syncthing or rsync;
-* Clonezilla or FOG imaging;
-* monitoring dashboards;
-* web-based control interface.
+* improving tested examples in `reports/`;
+* adjusting the required package list for real courses;
+* adding clearer professor handover notes after feedback;
+* improving inventory examples if the lab layout changes.
 
 For the first version, the priority is:
 

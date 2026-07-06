@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+#
+# labmanage
+#
+# Root launcher for the Linux Lab Management Toolkit.
+#
+# Purpose:
+#   Open the professor-friendly lab management menu using one simple command.
+#
+# Main usage from the project root:
+#   ./labmanage
+#
+# Optional system-wide usage after creating a symbolic link:
+#   labmanage
+#
+# Example system-wide shortcut, after the project path is final:
+#   sudo ln -s /FULL/PATH/TO/linux-lab-management/labmanage /usr/local/bin/labmanage
+#
+# Safety:
+#   This launcher does not run Ansible tasks directly.
+#   It only locates the project folder and starts scripts/manage_lab.sh.
+#
+# Notes:
+#   - No passwords are stored here.
+#   - No inventory data is stored here.
+#   - No student computer is modified by this launcher itself.
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+SCRIPT_NAME="labmanage"
+PROJECT_MARKER_FILE="ansible.cfg"
+PROJECT_PLAYBOOK_DIR="playbooks"
+MENU_SCRIPT_RELATIVE="scripts/manage_lab.sh"
+
+print_error() {
+  echo "ERROR: $*" >&2
+}
+
+print_info() {
+  echo "$*"
+}
+
+show_help() {
+  cat <<EOF
+Linux Lab Management Toolkit Launcher
+
+Usage:
+  ./labmanage
+
+Optional after system-wide installation:
+  labmanage
+
+What this does:
+  Opens the professor-friendly Ansible lab management menu.
+
+Important:
+  This launcher must be inside the linux-lab-management project folder.
+  It expects to find:
+    - ansible.cfg
+    - playbooks/
+    - scripts/manage_lab.sh
+
+EOF
+}
+
+resolve_launcher_path() {
+  local source="${BASH_SOURCE[0]}"
+
+  # Follow symbolic links safely.
+  while [ -L "$source" ]; do
+    local source_dir
+    source_dir="$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)"
+
+    local link_target
+    link_target="$(readlink "$source")"
+
+    if [[ "$link_target" == /* ]]; then
+      source="$link_target"
+    else
+      source="$source_dir/$link_target"
+    fi
+  done
+
+  local final_dir
+  final_dir="$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)"
+
+  printf '%s/%s\n' "$final_dir" "$(basename "$source")"
+}
+
+main() {
+  case "${1:-}" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+  esac
+
+  local launcher_path
+  launcher_path="$(resolve_launcher_path)"
+
+  local project_dir
+  project_dir="$(cd -P "$(dirname "$launcher_path")" >/dev/null 2>&1 && pwd)"
+
+  local menu_script
+  menu_script="$project_dir/$MENU_SCRIPT_RELATIVE"
+
+  # Basic project sanity checks.
+  if [ ! -d "$project_dir" ]; then
+    print_error "Project directory could not be found."
+    print_error "Detected project path: $project_dir"
+    exit 1
+  fi
+
+  if [ ! -f "$project_dir/$PROJECT_MARKER_FILE" ]; then
+    print_error "This does not look like the linux-lab-management project folder."
+    echo
+    echo "Expected to find:"
+    echo "  $project_dir/$PROJECT_MARKER_FILE"
+    echo
+    echo "Detected launcher path:"
+    echo "  $launcher_path"
+    echo
+    echo "Please run this launcher from the complete project folder."
+    exit 1
+  fi
+
+  if [ ! -d "$project_dir/$PROJECT_PLAYBOOK_DIR" ]; then
+    print_error "The playbooks directory was not found."
+    echo
+    echo "Expected to find:"
+    echo "  $project_dir/$PROJECT_PLAYBOOK_DIR/"
+    echo
+    echo "Please make sure the project folder is complete."
+    exit 1
+  fi
+
+  if [ ! -f "$menu_script" ]; then
+    print_error "The lab management menu script was not found."
+    echo
+    echo "Expected to find:"
+    echo "  $menu_script"
+    echo
+    echo "Please make sure scripts/manage_lab.sh exists."
+    exit 1
+  fi
+
+  if [ ! -r "$menu_script" ]; then
+    print_error "The lab management menu script exists but is not readable."
+    echo
+    echo "File:"
+    echo "  $menu_script"
+    echo
+    echo "Try:"
+    echo "  chmod +r $menu_script"
+    exit 1
+  fi
+
+  # Move into the project root so all relative paths inside the menu script work.
+  cd "$project_dir"
+
+  print_info "Starting Linux Lab Management Toolkit..."
+  print_info "Project directory: $project_dir"
+  echo
+
+  # Use bash explicitly, so manage_lab.sh does not need executable permission.
+  exec bash "$menu_script" "$@"
+}
+
+main "$@"

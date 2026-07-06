@@ -9,11 +9,12 @@
 #
 # Safety:
 #   - Requires sudo privileges.
-#   - Only copies files from the local shared_materials/ directory.
+#   - Only copies files from the configured shared materials directory.
 #   - Existing files may be updated if they have changed.
 #   - No system files are modified.
 #   - Does NOT delete existing files on student computers.
 #   - Does NOT reboot computers.
+#   - Test on one PC first before copying to the full lab.
 #
 # Before running:
 #   1. Place the files you want to distribute into:
@@ -38,51 +39,44 @@
   become: true
   gather_facts: false
 
-  vars:
-
-    # User account that owns the files on student computers.
-    student_user: student
-
-    # Source directory on the control node.
-    source_dir: "{{ playbook_dir }}/../shared_materials/"
-
-    # Destination directory on each managed computer.
-    destination_dir: "/home/{{ student_user }}/Lab_Materials/"
+  vars_files:
+    - ../config/lab_settings.yml
 
   tasks:
-
     - name: Ensure destination directory exists
       ansible.builtin.file:
-        path: "{{ destination_dir }}"
+        path: "{{ shared_materials_destination }}"
         state: directory
-        owner: "{{ student_user }}"
-        group: "{{ student_user }}"
-        mode: "0755"
+        owner: "{{ shared_materials_owner }}"
+        group: "{{ shared_materials_group }}"
+        mode: "{{ shared_materials_directory_mode }}"
 
     - name: Copy shared teaching materials
       ansible.builtin.copy:
-        src: "{{ source_dir }}"
-        dest: "{{ destination_dir }}"
-        owner: "{{ student_user }}"
-        group: "{{ student_user }}"
-        mode: "0644"
+        src: "{{ playbook_dir }}/../{{ shared_materials_source }}"
+        dest: "{{ shared_materials_destination }}/"
+        owner: "{{ shared_materials_owner }}"
+        group: "{{ shared_materials_group }}"
+        mode: "{{ shared_materials_file_mode }}"
+        directory_mode: "{{ shared_materials_directory_mode }}"
 
     - name: Display deployment summary
       ansible.builtin.debug:
         msg:
           - "Teaching materials copied successfully."
           - "Host: {{ inventory_hostname }}"
-          - "Source: {{ source_dir }}"
-          - "Destination: {{ destination_dir }}"
-          - "Owner: {{ student_user }}"
+          - "Source: {{ shared_materials_source }}"
+          - "Destination: {{ shared_materials_destination }}"
+          - "Owner: {{ shared_materials_owner }}"
       changed_when: false
 
 # -----------------------------------------------------------------------------
 # Notes
 #
-# • Only place files intended for students inside shared_materials/.
-# • Do NOT store passwords, SSH keys, or confidential information there.
-# • Existing files with the same name will be updated.
-# • Files not present in shared_materials/ are NOT removed from the destination.
-# • For large datasets, consider using synchronize (rsync) instead of copy.
+# - Only place files intended for students inside shared_materials/.
+# - The source and destination are configured in config/lab_settings.yml.
+# - Do NOT store passwords, SSH keys, or confidential information there.
+# - Existing files with the same name will be updated.
+# - Files not present in shared_materials/ are NOT removed from the destination.
+# - For large datasets, consider using synchronize (rsync) instead of copy.
 # -----------------------------------------------------------------------------

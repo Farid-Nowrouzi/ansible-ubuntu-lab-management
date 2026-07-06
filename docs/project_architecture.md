@@ -20,6 +20,12 @@ It is intended for:
 
 Reading this document should provide a complete understanding of the project before modifying or extending it.
 
+For a shorter high-level overview, read:
+
+```text
+docs/project_overview.md
+```
+
 ---
 
 # High-Level Architecture
@@ -70,6 +76,7 @@ Responsibilities:
 
 - Stores the project repository
 - Stores inventory.ini
+- Stores config/lab_settings.yml
 - Executes playbooks
 - Maintains SSH keys
 - Controls all student computers
@@ -146,7 +153,30 @@ The inventory is the bridge between Ansible and the laboratory.
 
 ---
 
-## 5. ansible.cfg
+## 5. Central Lab Settings
+
+The central settings file is:
+
+```
+config/lab_settings.yml
+```
+
+This file stores safe, non-secret defaults used by several playbooks.
+
+It controls:
+
+- package list;
+- shared-materials source and destination;
+- copied file ownership and permissions;
+- update and cleanup behavior;
+- preflight disk and memory thresholds;
+- reboot timeout.
+
+It must not contain passwords, SSH keys, IP addresses, hostnames, or private lab data.
+
+---
+
+## 6. ansible.cfg
 
 This file configures Ansible itself.
 
@@ -187,9 +217,25 @@ linux-lab-management/
 
 Every folder has a single responsibility.
 
+The `config/` folder contains `lab_settings.yml`, which lets the professor change routine lab settings without editing playbooks.
+
 ---
 
 # Folder Responsibilities
+
+## config/
+
+Contains safe central settings.
+
+Example:
+
+```
+lab_settings.yml
+```
+
+Professors edit this file to change packages, shared-materials destination, update behavior, cleanup behavior, thresholds, and reboot timeout.
+
+---
 
 ## playbooks/
 
@@ -198,6 +244,7 @@ Contains all automation tasks.
 Examples:
 
 ```
+00_preflight_check.yml
 01_check_connection.yml
 02_collect_lab_status.yml
 03_update_system.yml
@@ -243,6 +290,21 @@ Examples:
 Nothing inside this folder is required for execution.
 
 It stores outputs only.
+
+---
+
+## scripts/
+
+Contains optional helper scripts.
+
+Examples:
+
+```
+manage_lab.sh
+run_with_logging.sh
+```
+
+These scripts make the toolkit easier to operate and test, but the playbooks can still be run directly.
 
 ---
 
@@ -456,6 +518,8 @@ The inventory determines where tasks go.
 
 Playbooks determine what happens.
 
+The settings file controls normal lab behavior inside the relevant playbooks.
+
 Reports record what happened.
 
 ---
@@ -485,6 +549,8 @@ Only the teacher computer contains:
 - inventory.ini
 - SSH private keys
 
+The repository may contain `config/lab_settings.yml`, but only with non-secret defaults.
+
 The GitHub repository contains only:
 
 ```
@@ -493,25 +559,18 @@ inventory.example.ini
 
 ---
 
-# Future Expansion
+# Future Improvement
 
-The current architecture has been designed so additional functionality can be added without restructuring the project.
+The current architecture is intentionally simple. Future improvements should stay practical for a university lab handover.
 
-Potential future extensions include:
+Useful future improvements may include:
 
-- Grafana monitoring dashboards
-- Prometheus metrics
-- Automatic inventory generation
-- Docker-based student environments
-- Classroom imaging
-- Backup automation
-- Scheduled maintenance
-- Web dashboard
-- Email notifications
-- Central logging
-- Remote classroom management
+- more tested report examples
+- clearer inventory examples for the real lab layout
+- small package-list adjustments for course needs
+- more troubleshooting notes based on professor feedback
 
-These additions can be integrated while preserving the current architecture.
+Avoid adding complex platform features unless the lab explicitly needs them.
 
 ---
 

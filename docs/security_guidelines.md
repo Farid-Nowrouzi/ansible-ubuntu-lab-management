@@ -232,11 +232,10 @@ Updating packages affects every managed machine.
 
 Before updating:
 
-✓ Verify connectivity.
-
-✓ Verify disk space.
-
-✓ Ensure no important class or laboratory session is running.
+- Verify preflight results.
+- Verify connectivity.
+- Verify disk space.
+- Ensure no important class or laboratory session is running.
 
 Always test updates on one machine first.
 
@@ -332,19 +331,13 @@ Recommendations:
 
 When creating new playbooks:
 
-✓ Prefer Ansible modules.
-
-✓ Avoid destructive shell commands.
-
-✓ Write descriptive task names.
-
-✓ Test on one computer first.
-
-✓ Document new functionality.
-
-✓ Keep playbooks idempotent.
-
-✓ Include comments for future maintainers.
+- Prefer Ansible modules.
+- Avoid destructive shell commands.
+- Write descriptive task names.
+- Test on one computer first.
+- Document new functionality.
+- Keep playbooks idempotent.
+- Include comments for future maintainers.
 
 ---
 

@@ -1,0 +1,168 @@
+---
+# ==============================================================================
+# Central Lab Settings
+# Project: Linux/Ubuntu Lab Management Toolkit
+# ==============================================================================
+#
+# Purpose:
+#   This file controls normal lab-management settings.
+#
+# Professors or future maintainers can edit this file to change common behavior
+# without editing the Ansible playbooks directly.
+#
+# Safe to commit:
+#   Yes, this file is safe to commit because it should contain only generic
+#   settings.
+#
+# Do NOT put here:
+#   - passwords
+#   - SSH private keys
+#   - real IP addresses
+#   - private hostnames
+#   - student personal data
+#   - secret tokens
+#
+# Main idea:
+#   inventory.ini controls WHICH computers are managed.
+#   config/lab_settings.yml controls WHAT settings the playbooks use.
+#   shared_materials/ contains WHAT files are copied.
+#   ./labmanage is HOW the professor runs the system.
+#
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# Software packages
+# Used by:
+#   playbooks/04_install_required_software.yml
+#
+# Add or remove Ubuntu package names here.
+#
+# Example:
+#   To install LibreOffice, add:
+#     - libreoffice
+#
+# Safety:
+#   Use official Ubuntu package names.
+#   Test on one PC first before installing on all lab computers.
+# ------------------------------------------------------------------------------
+
+required_packages:
+  - vim
+  - git
+  - curl
+  - wget
+  - python3
+  - python3-pip
+  - htop
+  - tree
+
+
+# ------------------------------------------------------------------------------
+# System update behavior
+# Used by:
+#   playbooks/03_update_system.yml
+#
+# update_package_cache:
+#   Refreshes the Ubuntu APT package list.
+#
+# upgrade_system_packages:
+#   Upgrades installed packages when updates are available.
+#
+# autoremove_unused_packages:
+#   Removes packages that Ubuntu says are no longer needed.
+#   Default is false for extra safety.
+#
+# apt_cache_valid_time_seconds:
+#   Avoids refreshing the package cache again if it was recently updated.
+# ------------------------------------------------------------------------------
+
+update_package_cache: true
+upgrade_system_packages: true
+autoremove_unused_packages: false
+apt_cache_valid_time_seconds: 3600
+
+
+# ------------------------------------------------------------------------------
+# Shared teaching materials
+# Used by:
+#   playbooks/05_copy_shared_materials.yml
+#
+# How it works:
+#   1. Put approved teaching files into shared_materials/
+#   2. Run ./labmanage
+#   3. Choose "Copy shared materials"
+#
+# Safety:
+#   Only files inside shared_materials/ are copied.
+#   This does not share the whole teacher/control computer.
+#
+# Important:
+#   If the student username is not "student", update owner/group below.
+# ------------------------------------------------------------------------------
+
+shared_materials_source: "shared_materials/"
+shared_materials_destination: "/home/student/Lab_Materials"
+shared_materials_owner: "student"
+shared_materials_group: "student"
+shared_materials_directory_mode: "0755"
+shared_materials_file_mode: "0644"
+
+
+# ------------------------------------------------------------------------------
+# Preflight thresholds
+# Used by:
+#   playbooks/00_preflight_check.yml
+#
+# minimum_free_disk_gb:
+#   Minimum free disk space expected on student PCs.
+#
+# minimum_memory_mb_warning:
+#   Show a warning if memory is below this value.
+# ------------------------------------------------------------------------------
+
+minimum_free_disk_gb: 2
+minimum_memory_mb_warning: 2048
+
+
+# ------------------------------------------------------------------------------
+# Cleanup behavior
+# Used by:
+#   playbooks/06_clean_lab_computers.yml
+#
+# clean_package_cache:
+#   Cleans downloaded APT package cache.
+#
+# clean_apt_autoremove:
+#   Removes unused packages if enabled in the cleanup playbook.
+#
+# clean_temp_files:
+#   Removes old temporary files only if enabled.
+#   Default is false for safety.
+#
+# clean_temp_files_older_than:
+#   Only used if clean_temp_files is true.
+#   Keep this conservative.
+#
+# Safety:
+#   Cleanup should never delete student home directories or documents.
+# ------------------------------------------------------------------------------
+
+clean_package_cache: true
+clean_apt_autoremove: true
+clean_temp_files: false
+clean_temp_files_older_than: "7d"
+
+
+# ------------------------------------------------------------------------------
+# Reboot behavior
+# Used by:
+#   playbooks/07_reboot_if_required.yml
+#
+# This does not make reboot automatic in the menu.
+# The menu still asks for confirmation.
+# The playbook should reboot only when Ubuntu creates:
+#   /var/run/reboot-required
+# ------------------------------------------------------------------------------
+
+reboot_timeout_seconds: 600

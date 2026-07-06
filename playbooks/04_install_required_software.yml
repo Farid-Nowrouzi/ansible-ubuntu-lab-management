@@ -12,6 +12,7 @@
 #   - Existing packages are NOT reinstalled.
 #   - Does NOT remove existing software.
 #   - Does NOT reboot the computer.
+#   - Do NOT run during active class time unless approved.
 #
 # Recommended workflow:
 #   1. Test on one computer first:
@@ -24,7 +25,7 @@
 #   3. Run on the remaining lab computers.
 #
 # To customize:
-#   Simply edit the "required_packages" list below.
+#   Edit config/lab_settings.yml and change the "required_packages" list.
 #
 # Example:
 #   ansible-playbook -i inventory.ini playbooks/04_install_required_software.yml
@@ -35,19 +36,8 @@
   become: true
   gather_facts: false
 
-  vars:
-
-    required_packages:
-      - vim
-      - nano
-      - htop
-      - curl
-      - wget
-      - git
-      - tree
-      - net-tools
-      - python3
-      - python3-pip
+  vars_files:
+    - ../config/lab_settings.yml
 
   tasks:
 

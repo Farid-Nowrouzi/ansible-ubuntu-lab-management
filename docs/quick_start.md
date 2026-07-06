@@ -1,6 +1,3 @@
-Copy everything inside this code block and replace `docs/quick_start.md` with it.
-
-````markdown
 # Quick Start Guide
 
 ## Ansible-Based Linux/Ubuntu Lab Management System
@@ -13,7 +10,7 @@ For complete first-time setup from zero, read:
 
 ```text
 docs/setup_guide.md
-````
+```
 
 For troubleshooting, read:
 
@@ -25,6 +22,18 @@ For routine maintenance, read:
 
 ```text
 docs/maintenance_checklist.md
+```
+
+For changing packages, shared-materials destination, or safe maintenance settings, read:
+
+```text
+docs/customization_guide.md
+```
+
+For the main professor handover guide, read:
+
+```text
+docs/professor_handover.md
 ```
 
 ---
@@ -90,6 +99,7 @@ You should see something similar to:
 ```text
 README.md
 ansible.cfg
+config/
 inventory.ini
 inventory.example.ini
 playbooks/
@@ -99,6 +109,12 @@ reports/
 ```
 
 If `inventory.ini` is missing, Ansible will not know which student computers to manage.
+
+Normal lab settings such as package lists and shared-materials destination are in:
+
+```text
+config/lab_settings.yml
+```
 
 ---
 
@@ -157,7 +173,37 @@ It only checks whether Ansible can communicate with the student PCs.
 
 ---
 
-## 6. Run the Connection Playbook
+## 6. Run the Preflight Check First
+
+Run:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
+```
+
+Purpose:
+
+```text
+Checks inventory availability, SSH connectivity, Python 3, sudo access, OS compatibility, disk space, memory, and basic host identity.
+```
+
+This is the recommended first step before any update, install, cleanup, or reboot activity.
+
+For one PC only:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml --limit pc1
+```
+
+If password-based SSH and sudo authentication are required, use:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml --ask-pass --ask-become-pass
+```
+
+---
+
+## 7. Run the Connection Playbook
 
 Run:
 
@@ -177,7 +223,7 @@ If a computer is unreachable, do not continue with update/install/reboot tasks u
 
 ---
 
-## 7. Collect Lab Status
+## 8. Collect Lab Status
 
 Run:
 
@@ -207,7 +253,7 @@ It should normally be run before maintenance.
 
 ---
 
-## 8. Golden Rule: Test One PC First
+## 9. Golden Rule: Test One PC First
 
 For any playbook that changes the system, test one computer first.
 
@@ -237,7 +283,7 @@ Do not immediately run update, install, cleanup, or reboot tasks on all machines
 
 ---
 
-## 9. Install Required Software
+## 10. Install Required Software
 
 Test on one PC first:
 
@@ -264,19 +310,18 @@ Typical starter packages include:
 * curl;
 * git;
 * tree;
-* net-tools;
 * python3;
 * python3-pip.
 
 To change the package list, edit:
 
 ```text
-playbooks/04_install_required_software.yml
+config/lab_settings.yml
 ```
 
 ---
 
-## 10. Copy Teaching Materials
+## 11. Copy Teaching Materials
 
 Place approved teaching files inside:
 
@@ -288,10 +333,10 @@ Example:
 
 ```text
 shared_materials/
-├── lecture_notes.pdf
-├── exercise_01.py
-├── dataset.csv
-└── instructions.txt
+|-- lecture_notes.pdf
+|-- exercise_01.py
+|-- dataset.csv
+`-- instructions.txt
 ```
 
 Test on one PC first:
@@ -311,11 +356,12 @@ Important:
 ```text
 Only files inside shared_materials/ are copied.
 Private files from the teacher/main computer are not copied.
+The destination is controlled by config/lab_settings.yml.
 ```
 
 ---
 
-## 11. Update Ubuntu Packages
+## 12. Update Ubuntu Packages
 
 Run this only when approved and not during class time.
 
@@ -337,6 +383,8 @@ Purpose:
 Updates Ubuntu package lists and upgrades installed packages.
 ```
 
+The update behavior is controlled by `config/lab_settings.yml`.
+
 This playbook should not reboot machines automatically.
 
 Rebooting is handled separately by:
@@ -347,7 +395,7 @@ playbooks/07_reboot_if_required.yml
 
 ---
 
-## 12. Clean Package Cache
+## 13. Clean Package Cache
 
 Test on one PC first if desired:
 
@@ -371,9 +419,11 @@ This should not delete student files.
 
 Do not add destructive delete commands without approval.
 
+Cleanup options are controlled by `config/lab_settings.yml`.
+
 ---
 
-## 13. Reboot Only If Required
+## 14. Reboot Only If Required
 
 Run only when safe and approved.
 
@@ -399,7 +449,7 @@ Avoid running this during active teaching sessions.
 
 ---
 
-## 14. Recommended Quick Maintenance Sequence
+## 15. Recommended Quick Maintenance Sequence
 
 For a normal maintenance session, use this order:
 
@@ -408,7 +458,7 @@ cd ~/linux-lab-management
 
 ansible -i inventory.ini students --list-hosts
 
-ansible -i inventory.ini students -m ping
+ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
 
 ansible-playbook -i inventory.ini playbooks/01_check_connection.yml
 
@@ -429,7 +479,39 @@ After successful one-PC testing, remove `--limit pc1`.
 
 ---
 
-## 15. Useful Command Reference
+## 16. Professor Menu and Logging
+
+Run the lab management menu:
+
+```bash
+./labmanage
+```
+
+In the menu, enter a number from `1` to `9`. Type `q`, `quit`, or `exit` to leave the menu.
+
+If needed, make the launcher executable first:
+
+```bash
+chmod +x labmanage scripts/manage_lab.sh scripts/run_with_logging.sh
+./labmanage
+```
+
+Save playbook output to `reports/`:
+
+```bash
+bash scripts/run_with_logging.sh playbooks/00_preflight_check.yml
+bash scripts/run_with_logging.sh playbooks/01_check_connection.yml --limit pc1
+```
+
+After real lab testing, fill:
+
+```text
+FINAL_TEST_REPORT.md
+```
+
+---
+
+## 17. Useful Command Reference
 
 ### Go to project folder
 
@@ -481,7 +563,7 @@ ansible-playbook -i inventory.ini playbooks/01_check_connection.yml -vv
 
 ---
 
-## 16. Understanding Common Ansible Output
+## 18. Understanding Common Ansible Output
 
 Ansible may show words such as:
 
@@ -505,11 +587,13 @@ If you see `failed` or `unreachable`, stop and check the issue before continuing
 
 ---
 
-## 17. Safety Warnings
+## 19. Safety Warnings
 
 Do not run these on all computers without approval:
 
 ```text
+04_install_required_software.yml
+05_copy_shared_materials.yml
 03_update_system.yml
 06_clean_lab_computers.yml
 07_reboot_if_required.yml
@@ -518,7 +602,7 @@ Do not run these on all computers without approval:
 Always follow:
 
 ```text
-One PC first → confirm result → then full lab
+Run preflight first -> test one PC -> confirm result -> then full lab
 ```
 
 Never commit these to GitHub:
@@ -532,7 +616,7 @@ personal files
 
 ---
 
-## 18. If Something Fails
+## 20. If Something Fails
 
 Use this troubleshooting order:
 
@@ -558,23 +642,28 @@ ansible-playbook -i inventory.ini playbooks/01_check_connection.yml --limit pc1 
 
 ---
 
-## 19. Where to Go Next
+## 21. Where to Go Next
 
 | Need                                     | Read                            |
 | ---------------------------------------- | ------------------------------- |
 | Full installation from zero              | `docs/setup_guide.md`           |
+| Main professor handover                  | `docs/professor_handover.md`    |
 | How the professor should use the toolkit | `docs/professor_user_manual.md` |
+| How to add a new student PC              | `docs/adding_new_pc.md`         |
+| How to change packages/settings safely   | `docs/customization_guide.md`   |
 | Common errors and fixes                  | `docs/troubleshooting.md`       |
 | Weekly/monthly maintenance               | `docs/maintenance_checklist.md` |
 | Playbook details                         | `docs/playbook_reference.md`    |
 | Security rules                           | `docs/security_guidelines.md`   |
+| Short architecture overview              | `docs/project_overview.md`      |
 | System architecture                      | `docs/project_architecture.md`  |
 | Current project progress                 | `PROJECT_STATUS.md`             |
 | Project changes                          | `CHANGELOG.md`                  |
+| Final test report template               | `FINAL_TEST_REPORT.md`          |
 
 ---
 
-## 20. Final Reminder
+## 22. Final Reminder
 
 This quick start guide is for fast operation.
 
@@ -583,8 +672,9 @@ For first-time setup, complete explanation, and troubleshooting, use the full do
 The safest operating rule is:
 
 ```text
-Check connection first.
-Collect status second.
+Run the preflight check first.
+Check connection second.
+Collect status third.
 Test changes on one PC.
 Apply to all only after confirmation.
 ```

@@ -1,4 +1,11 @@
 inventory.ini
+inventory.ini.*
+.lab_inventory.json
+logs/
+reports/*
+!reports/README.md
+.venv/
+*.zip
 *.pem
 *.key
 id_rsa
@@ -6,5 +13,6 @@ id_rsa.pub
 id_ed25519
 id_ed25519.pub
 .vscode/
-**pycache**/
+__pycache__/
+**/__pycache__/
 *.retry

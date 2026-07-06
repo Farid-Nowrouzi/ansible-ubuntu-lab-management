@@ -1,0 +1,199 @@
+---
+# =============================================================================
+# Playbook: 00_preflight_check.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Verify that the lab environment is ready before running maintenance
+#   playbooks such as updates, software installation, cleanup, shared material
+#   copy, or reboot actions.
+#
+# Safety:
+#   - Read-only.
+#   - Does not install packages.
+#   - Does not update packages.
+#   - Does not delete files.
+#   - Does not reboot machines.
+#   - Does not change system configuration.
+#
+# Recommended use:
+#   Run this first on one PC or on the full lab:
+#     ansible-playbook playbooks/00_preflight_check.yml --limit pc1
+#     ansible-playbook playbooks/00_preflight_check.yml
+#     ansible-playbook playbooks/00_preflight_check.yml --ask-pass --ask-become-pass
+# =============================================================================
+
+- name: Validate that the student inventory is present and usable
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Verify that the students group exists
+      ansible.builtin.assert:
+        that:
+          - "'students' in groups"
+        fail_msg: >
+          No [students] group was found in the inventory.
+          Make sure inventory.ini contains a [students] group before running lab playbooks.
+        success_msg: "Inventory contains a [students] group."
+
+    - name: Verify that the students group is not empty
+      ansible.builtin.assert:
+        that:
+          - groups['students'] | length > 0
+        fail_msg: >
+          The [students] group is empty.
+          Add one or more student PCs to inventory.ini before running lab playbooks.
+          Example: pc1 ansible_host=192.168.1.10 ansible_user=student
+        success_msg: "Inventory check passed. Found {{ groups['students'] | length }} student host(s)."
+      when: "'students' in groups"
+
+- name: Run read-only preflight checks on student lab computers
+  hosts: students
+  gather_facts: false
+
+  vars_files:
+    - ../config/lab_settings.yml
+
+  tasks:
+    - name: Check basic SSH connectivity and Python 3 availability
+      ansible.builtin.raw: command -v python3
+      register: python_check
+      changed_when: false
+      failed_when: false
+      ignore_unreachable: true
+
+    - name: Fail when SSH connectivity is not working
+      ansible.builtin.fail:
+        msg: >
+          SSH/Ansible connectivity failed for {{ inventory_hostname }}.
+          Check the host name, IP address, network connection, and SSH access before continuing.
+      when: python_check.unreachable | default(false)
+
+    - name: Fail when Python 3 is missing
+      ansible.builtin.assert:
+        that:
+          - python_check.rc | default(1) | int == 0
+        fail_msg: >
+          Python 3 is not available on {{ inventory_hostname }}.
+          Ansible modules require Python 3 on managed student PCs.
+          Install Python 3 before running the normal lab playbooks.
+        success_msg: "Python 3 is available on {{ inventory_hostname }}."
+      when: not (python_check.unreachable | default(false))
+
+    - name: Check Ansible module connectivity
+      ansible.builtin.ping:
+      register: connectivity_check
+      changed_when: false
+      ignore_errors: true
+      when:
+        - not (python_check.unreachable | default(false))
+        - python_check.rc | default(1) | int == 0
+
+    - name: Fail when Ansible module connectivity is not working
+      ansible.builtin.assert:
+        that:
+          - connectivity_check is succeeded
+        fail_msg: >
+          Ansible reached {{ inventory_hostname }} over SSH, but the normal Ansible module check failed.
+          Confirm Python 3 is working correctly on this host before continuing.
+        success_msg: "Ansible module connectivity works on {{ inventory_hostname }}."
+
+    - name: Check sudo/become access with a harmless command
+      ansible.builtin.command: whoami
+      become: true
+      register: sudo_check
+      changed_when: false
+      failed_when: false
+      ignore_errors: true
+      when:
+        - not (python_check.unreachable | default(false))
+        - python_check.rc | default(1) | int == 0
+
+    - name: Gather system facts safely
+      ansible.builtin.setup:
+      changed_when: false
+      when:
+        - not (python_check.unreachable | default(false))
+        - python_check.rc | default(1) | int == 0
+
+    - name: Find root filesystem information
+      ansible.builtin.set_fact:
+        root_mount: "{{ (ansible_facts['mounts'] | default([]) | selectattr('mount', 'equalto', '/') | list | first) | default({}) }}"
+      changed_when: false
+
+    - name: Build readable preflight values
+      ansible.builtin.set_fact:
+        root_disk_available_gb: "{{ (root_mount.size_available | default(0) | int / 1024 / 1024 / 1024) | round(2) }}"
+        root_disk_total_gb: "{{ (root_mount.size_total | default(0) | int / 1024 / 1024 / 1024) | round(2) }}"
+        total_memory_mb: "{{ ansible_facts['memtotal_mb'] | default(0) }}"
+        os_status: >-
+          {{ 'supported'
+             if (ansible_facts['distribution'] | default('unknown')) == 'Ubuntu'
+             else ('compatible'
+                   if (ansible_facts['os_family'] | default('unknown')) == 'Debian'
+                   else 'unsupported') }}
+        sudo_status: "{{ 'OK' if (sudo_check.stdout | default('')) == 'root' else 'FAILED' }}"
+      changed_when: false
+
+    - name: Show host identity summary
+      ansible.builtin.debug:
+        msg:
+          - "Inventory hostname: {{ inventory_hostname }}"
+          - "Actual hostname: {{ ansible_facts['hostname'] | default('unknown') }}"
+          - "IPv4 address: {{ (ansible_facts['default_ipv4'] | default({})).address | default('unknown') }}"
+          - "OS: {{ ansible_facts['distribution'] | default('unknown') }} {{ ansible_facts['distribution_version'] | default('unknown') }}"
+          - "Disk free on /: {{ root_disk_available_gb }} GB of {{ root_disk_total_gb }} GB"
+          - "Total memory: {{ total_memory_mb }} MB"
+          - "Sudo/become: {{ sudo_status }}"
+      changed_when: false
+
+    - name: Warn when the OS is Debian-family but not Ubuntu
+      ansible.builtin.debug:
+        msg: >
+          WARNING: {{ inventory_hostname }} is Debian-family Linux, but not Ubuntu.
+          This toolkit is intended for Ubuntu lab computers, so test carefully before running maintenance tasks.
+      when: os_status == 'compatible'
+      changed_when: false
+
+    - name: Warn when memory is low
+      ansible.builtin.debug:
+        msg: >
+          WARNING: {{ inventory_hostname }} has {{ total_memory_mb }} MB RAM.
+          This is below the recommended {{ minimum_memory_mb_warning }} MB threshold.
+      when: total_memory_mb | int < minimum_memory_mb_warning | int
+      changed_when: false
+
+    - name: Fail when sudo/become access is not available
+      ansible.builtin.assert:
+        that:
+          - sudo_status == 'OK'
+        fail_msg: >
+          Sudo/become access did not work on {{ inventory_hostname }}.
+          Check the SSH user and sudo configuration before running maintenance playbooks.
+        success_msg: "Sudo/become access works on {{ inventory_hostname }}."
+
+    - name: Fail when the operating system is unsupported
+      ansible.builtin.assert:
+        that:
+          - os_status != 'unsupported'
+        fail_msg: >
+          Unsupported operating system on {{ inventory_hostname }}:
+          {{ ansible_facts['distribution'] | default('unknown') }}
+          {{ ansible_facts['distribution_version'] | default('unknown') }}.
+          This toolkit is intended for Ubuntu, with Debian-family systems treated as compatible but not preferred.
+        success_msg: "Operating system check passed for {{ inventory_hostname }}."
+
+    - name: Fail when free disk space on root filesystem is too low
+      ansible.builtin.assert:
+        that:
+          - root_disk_available_gb | float >= minimum_free_disk_gb | float
+        fail_msg: >
+          {{ inventory_hostname }} has only {{ root_disk_available_gb }} GB free on /.
+          At least {{ minimum_free_disk_gb }} GB free space is recommended before maintenance tasks.
+        success_msg: "Disk space check passed for {{ inventory_hostname }}."
+
+    - name: Show final preflight result
+      ansible.builtin.debug:
+        msg: "Preflight check passed for {{ inventory_hostname }}. This host is ready for the next safe workflow step."
+      changed_when: false

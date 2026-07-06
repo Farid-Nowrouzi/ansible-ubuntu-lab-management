@@ -14,6 +14,7 @@
 #   - Does NOT delete documents or teaching materials.
 #   - Does NOT remove manually installed software.
 #   - Does NOT reboot the system.
+#   - Do NOT run during active class time.
 #
 # Recommended workflow:
 #   1. Test on one computer first:
@@ -34,28 +35,48 @@
   become: true
   gather_facts: false
 
-  tasks:
+  vars_files:
+    - ../config/lab_settings.yml
 
+  tasks:
     - name: Remove unused package dependencies
       ansible.builtin.apt:
         autoremove: true
         autoclean: false
+      when: clean_apt_autoremove | bool
 
     - name: Clean downloaded package cache
       ansible.builtin.apt:
         autoclean: true
         autoremove: false
+      when: clean_package_cache | bool
+
+    - name: Find old temporary files when enabled
+      ansible.builtin.find:
+        paths: /tmp
+        recurse: true
+        file_type: file
+        age: 7d
+      register: old_temp_files
+      when: clean_temp_files | bool
+
+    - name: Remove old temporary files when enabled
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_temp_files.files | default([]) }}"
+      when: clean_temp_files | bool
 
     - name: Display maintenance summary
       ansible.builtin.debug:
         msg:
           - "Package maintenance completed."
           - "Host: {{ inventory_hostname }}"
-          - "Unused package dependencies removed."
-          - "APT package cache cleaned."
-          - "No user files were modified."
+          - "Unused package dependencies removal enabled: {{ clean_apt_autoremove }}"
+          - "APT package cache cleanup enabled: {{ clean_package_cache }}"
+          - "Old /tmp file cleanup enabled: {{ clean_temp_files }}"
+          - "No student home directories were modified."
           - "No reboot was performed."
-
       changed_when: false
 
 # -----------------------------------------------------------------------------
@@ -65,12 +86,12 @@
 #
 # It does NOT:
 #
-#   • Delete student documents
-#   • Delete Downloads
-#   • Delete Desktop files
-#   • Empty Trash
-#   • Remove personal configuration files
-#   • Remove manually installed applications
+#   - Delete student documents
+#   - Delete Downloads
+#   - Delete Desktop files
+#   - Empty Trash
+#   - Remove personal configuration files
+#   - Remove manually installed applications
 #
 # If additional cleanup policies are required, they should be implemented
 # as separate playbooks after instructor approval.
