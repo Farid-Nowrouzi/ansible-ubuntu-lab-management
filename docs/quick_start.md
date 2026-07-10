@@ -678,3 +678,18 @@ Collect status third.
 Test changes on one PC.
 Apply to all only after confirmation.
 ```
+
+## Current Hardened Lab Setup
+
+After cloning or pulling on Ubuntu PC0:
+
+```bash
+chmod +x labmanage
+git update-index --chmod=+x labmanage
+```
+
+Use private inventory entries with `ansible_user=labadmin` and the correct
+`lab_student_user`. Run syntax checks, then test pc1 only. Confirm labadmin
+SSH/sudo before revoking student sudo, and configure auto-login only for the
+classroom account. Auto-login must be physically verified after reboot/logout;
+it is not proof of completed real-lab testing.

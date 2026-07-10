@@ -1,0 +1,303 @@
+---
+# =============================================================================
+# Playbook: 08_setup_labadmin_user.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Create and prepare a dedicated lab administrator account on Ubuntu
+#   student computers. This account is intended for professor/Ansible
+#   administration after student classroom accounts are made limited users.
+#
+# Security model:
+#   - labadmin:
+#       Administrator account used by Ansible/professor.
+#       Must have sudo access.
+#
+#   - student/student123:
+#       Classroom account used by students.
+#       Should eventually NOT have sudo access.
+#
+# What this playbook does:
+#   - Creates the lab administrator account if missing.
+#   - Ensures the account has a home directory and /bin/bash shell.
+#   - Adds the account to the sudo group.
+#   - Installs the control PC SSH public key for passwordless SSH access.
+#   - Optionally sets a password if a password hash is configured.
+#   - Verifies that the account exists and belongs to the sudo group.
+#
+# What this playbook does NOT do:
+#   - Does NOT remove sudo from the student account.
+#   - Does NOT delete users.
+#   - Does NOT rename users.
+#   - Does NOT configure automatic login.
+#   - Does NOT reboot the computer.
+#
+# Safety:
+#   - Run on one test computer first, for example pc1.
+#   - Confirm labadmin SSH and sudo work before revoking student sudo.
+#   - Do not store plaintext passwords in this repository.
+#   - If setting a password, use lab_admin_password_hash, not plaintext.
+#
+# Recommended workflow:
+#   1. Run this playbook on one PC:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/08_setup_labadmin_user.yml --limit pc1 --ask-become-pass
+#
+#   2. Test SSH as labadmin:
+#
+#      ansible -i inventory.ini pc1 -u labadmin -m ping
+#
+#   3. Test sudo as labadmin:
+#
+#      ansible -i inventory.ini pc1 -u labadmin \
+#        -m command -a "whoami" -b --ask-become-pass
+#
+#      Expected output:
+#        root
+#
+#   4. Only after labadmin works, run the student sudo revoke playbook.
+# =============================================================================
+
+- name: Create and prepare the lab administrator account
+  hosts: students
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../config/lab_settings.yml
+
+  vars:
+    effective_lab_admin_user: "{{ lab_admin_user | default('labadmin', true) | trim }}"
+    effective_sudo_group_name: "{{ sudo_group_name | default('sudo', true) | trim }}"
+    configured_lab_admin_public_key_file: "{{ lab_admin_public_key_file | default('', true) | trim }}"
+    effective_lab_admin_password_hash: "{{ lab_admin_password_hash | default('', true) | trim }}"
+
+    lab_admin_public_key_candidates: >-
+      {{
+        ([configured_lab_admin_public_key_file]
+         if configured_lab_admin_public_key_file | length > 0
+         else [])
+        +
+        [
+          lookup('env', 'HOME') + '/.ssh/id_ed25519.pub',
+          lookup('env', 'HOME') + '/.ssh/id_rsa.pub'
+        ]
+      }}
+
+  pre_tasks:
+    - name: Validate lab administrator configuration
+      ansible.builtin.assert:
+        that:
+          - effective_lab_admin_user | length > 0
+          - effective_lab_admin_user != 'root'
+          - effective_lab_admin_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_sudo_group_name | length > 0
+        fail_msg: >-
+          Invalid lab administrator configuration. lab_admin_user must be a
+          valid non-root Linux username, and sudo_group_name must not be empty.
+      changed_when: false
+
+    - name: Reject plaintext lab administrator password values
+      ansible.builtin.assert:
+        that:
+          - effective_lab_admin_password_hash is match('^\$')
+        fail_msg: >-
+          lab_admin_password_hash appears to be plaintext or invalid. Do not
+          store plaintext passwords in config/lab_settings.yml. Generate a
+          password hash using: openssl passwd -6
+      when: effective_lab_admin_password_hash | length > 0
+      changed_when: false
+
+    - name: Verify sudo group exists on the target computer
+      ansible.builtin.command: "getent group {{ effective_sudo_group_name }}"
+      register: sudo_group_lookup
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if sudo group does not exist
+      ansible.builtin.assert:
+        that:
+          - sudo_group_lookup.rc == 0
+        fail_msg: >-
+          The sudo group '{{ effective_sudo_group_name }}' does not exist on
+          {{ inventory_hostname }}. This playbook is designed for Ubuntu-style
+          systems where administrator access is controlled through the sudo group.
+      changed_when: false
+
+    - name: Check SSH public-key candidates on the control PC
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      delegate_to: localhost
+      become: false
+      loop: "{{ lab_admin_public_key_candidates | unique }}"
+      register: lab_admin_public_key_checks
+      changed_when: false
+
+    - name: Select the first available SSH public key
+      ansible.builtin.set_fact:
+        selected_lab_admin_public_key_file: >-
+          {{
+            (
+              lab_admin_public_key_checks.results
+              | selectattr('stat.exists', 'equalto', true)
+              | selectattr('stat.isreg', 'equalto', true)
+              | map(attribute='item')
+              | list
+              | first
+            ) | default('')
+          }}
+      changed_when: false
+
+    - name: Require a readable SSH public key on the control PC
+      ansible.builtin.assert:
+        that:
+          - selected_lab_admin_public_key_file | length > 0
+        fail_msg: >-
+          No SSH public key was found on the control PC. Checked configured
+          lab_admin_public_key_file first, then ~/.ssh/id_ed25519.pub, then
+          ~/.ssh/id_rsa.pub. Create an SSH key or configure
+          lab_admin_public_key_file in config/lab_settings.yml.
+      changed_when: false
+
+    - name: Read selected SSH public key from the control PC
+      ansible.builtin.set_fact:
+        selected_lab_admin_public_key_content: >-
+          {{ lookup('ansible.builtin.file', selected_lab_admin_public_key_file) | trim }}
+      changed_when: false
+
+    - name: Validate selected SSH key is a public key
+      ansible.builtin.assert:
+        that:
+          - selected_lab_admin_public_key_content | length > 20
+          - "'PRIVATE KEY' not in selected_lab_admin_public_key_content"
+          - selected_lab_admin_public_key_content is match('^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp[0-9]+|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) ')
+        fail_msg: >-
+          The selected SSH key does not look like a valid OpenSSH public key:
+          {{ selected_lab_admin_public_key_file }}. Make sure you selected a
+          .pub file, not a private key.
+      changed_when: false
+
+    - name: Validate selected SSH public key payload with ssh-keygen
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -l
+          - -f
+          - "{{ selected_lab_admin_public_key_file }}"
+      delegate_to: localhost
+      become: false
+      register: lab_admin_public_key_validation
+      changed_when: false
+      failed_when: false
+
+    - name: Stop when selected SSH public key payload is invalid
+      ansible.builtin.assert:
+        that:
+          - lab_admin_public_key_validation.rc == 0
+        fail_msg: >-
+          ssh-keygen could not validate the selected public key
+          {{ selected_lab_admin_public_key_file }}. Confirm that openssh-client
+          is installed on the control PC and that the file contains a valid
+          OpenSSH public key payload.
+      changed_when: false
+
+  tasks:
+    - name: Ensure the lab administrator account exists and has sudo
+      ansible.builtin.user:
+        name: "{{ effective_lab_admin_user }}"
+        state: present
+        shell: /bin/bash
+        create_home: true
+        groups: "{{ effective_sudo_group_name }}"
+        append: true
+
+    - name: Optionally set lab administrator password hash
+      ansible.builtin.user:
+        name: "{{ effective_lab_admin_user }}"
+        password: "{{ effective_lab_admin_password_hash }}"
+        update_password: always
+      when: effective_lab_admin_password_hash | length > 0
+      no_log: true
+
+    - name: Read lab administrator passwd entry
+      ansible.builtin.command: "getent passwd {{ effective_lab_admin_user }}"
+      register: lab_admin_passwd_entry
+      changed_when: false
+
+    - name: Determine lab administrator home directory
+      ansible.builtin.set_fact:
+        lab_admin_home_dir: "{{ lab_admin_passwd_entry.stdout.split(':')[5] }}"
+      changed_when: false
+
+    - name: Determine lab administrator primary group
+      ansible.builtin.command: "id -gn {{ effective_lab_admin_user }}"
+      register: lab_admin_primary_group
+      changed_when: false
+
+    - name: Ensure lab administrator .ssh directory exists
+      ansible.builtin.file:
+        path: "{{ lab_admin_home_dir }}/.ssh"
+        state: directory
+        owner: "{{ effective_lab_admin_user }}"
+        group: "{{ lab_admin_primary_group.stdout }}"
+        mode: "0700"
+
+    - name: Install control PC SSH public key for lab administrator
+      ansible.builtin.lineinfile:
+        path: "{{ lab_admin_home_dir }}/.ssh/authorized_keys"
+        line: "{{ selected_lab_admin_public_key_content }}"
+        state: present
+        create: true
+        owner: "{{ effective_lab_admin_user }}"
+        group: "{{ lab_admin_primary_group.stdout }}"
+        mode: "0600"
+
+    - name: Verify the lab administrator account exists
+      ansible.builtin.command: "id {{ effective_lab_admin_user }}"
+      register: lab_admin_id_result
+      changed_when: false
+
+    - name: Verify the lab administrator groups
+      ansible.builtin.command: "id -nG {{ effective_lab_admin_user }}"
+      register: lab_admin_groups
+      changed_when: false
+
+    - name: Verify lab administrator belongs to sudo group
+      ansible.builtin.assert:
+        that:
+          - effective_sudo_group_name in lab_admin_groups.stdout.split()
+        fail_msg: >-
+          {{ effective_lab_admin_user }} exists but is not in the
+          {{ effective_sudo_group_name }} group. Do not revoke student sudo
+          until this is fixed.
+      changed_when: false
+
+    - name: Display lab administrator setup summary
+      ansible.builtin.debug:
+        msg:
+          - "Lab administrator setup completed."
+          - "Host: {{ inventory_hostname }}"
+          - "Administrator account: {{ effective_lab_admin_user }}"
+          - "Home directory: {{ lab_admin_home_dir }}"
+          - "Groups: {{ lab_admin_groups.stdout }}"
+          - "SSH public key installed from: {{ selected_lab_admin_public_key_file }}"
+          - "Password hash configured: {{ 'yes' if effective_lab_admin_password_hash | length > 0 else 'no, password unchanged' }}"
+          - "Next step: test SSH and sudo as {{ effective_lab_admin_user }} before revoking student sudo."
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+# Notes
+#
+# This playbook prepares the administrator account only.
+#
+# It intentionally does NOT revoke sudo from the student account. The safe
+# sequence is:
+#
+#   1. Run this playbook.
+#   2. Confirm Ansible can connect as labadmin.
+#   3. Confirm labadmin can become root using sudo.
+#   4. Run 10_revoke_student_sudo.yml.
+#
+# This separation prevents accidental loss of remote administrative access.
+# -----------------------------------------------------------------------------

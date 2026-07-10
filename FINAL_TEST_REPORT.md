@@ -22,6 +22,15 @@ Erasmus Internship Technical Project
 
 ---
 
+## Current Scope Note
+
+This report records earlier validation of the core lab-management workflow. It
+does **not** prove that playbooks 08-13, the labadmin/student hardening model,
+or graphical student auto-login have completed Ubuntu syntax checks or real-lab
+testing. Those checks remain pending in `LAB_TEST_PLAN.md`.
+
+---
+
 # 1. Test Report Purpose
 
 This document records the final validation of the **Linux/Ubuntu Lab Management Toolkit**, an Ansible-based system created to help a professor or laboratory maintainer manage multiple Ubuntu student computers from a central control computer.

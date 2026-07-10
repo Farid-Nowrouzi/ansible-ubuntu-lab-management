@@ -1,0 +1,301 @@
+---
+# =============================================================================
+# Playbook: 10_revoke_student_sudo.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Remove sudo/administrator privileges from the classroom student account
+#   on selected Ubuntu lab computers.
+#
+# Security model:
+#   - labadmin:
+#       Administrator account used by Ansible/professor.
+#       Must already exist and must have sudo access.
+#
+#   - student/student123:
+#       Classroom account used by students.
+#       Should normally NOT have sudo access.
+#
+# What this playbook does:
+#   - Verifies the lab administrator account exists.
+#   - Verifies the lab administrator account has sudo access.
+#   - Verifies the classroom student account exists.
+#   - Removes ONLY sudo-group membership from the student account.
+#   - Preserves all other student groups.
+#   - Verifies that sudo was removed.
+#
+# What this playbook does NOT do:
+#   - Does NOT delete the student user.
+#   - Does NOT delete student files.
+#   - Does NOT remove the student home directory.
+#   - Does NOT change passwords.
+#   - Does NOT remove non-sudo groups such as adm, cdrom, dip, plugdev,
+#     lpadmin, or sambashare.
+#   - Does NOT reboot the computer.
+#   - Does NOT configure automatic login.
+#
+# Safety:
+#   - Run on one test computer first, for example pc1.
+#   - Do NOT run this until labadmin SSH and sudo have been tested.
+#   - The playbook refuses to remove sudo from the labadmin account.
+#   - The playbook refuses to remove sudo from the current Ansible connection
+#     user unless allow_revoke_current_ansible_user=true is explicitly passed.
+#
+# Important note:
+#   Removing a user from sudo affects new login sessions. If the student user
+#   is already logged in, the old session may keep old group membership until
+#   logout, reboot, or session restart.
+#
+# Recommended workflow:
+#   1. Confirm labadmin works:
+#
+#      ansible -i inventory.ini pc1 -u labadmin -m ping
+#
+#      ansible -i inventory.ini pc1 -u labadmin \
+#        -m command -a "whoami" -b --ask-become-pass
+#
+#      Expected output:
+#        root
+#
+#   2. Revoke sudo from the student account:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/10_revoke_student_sudo.yml \
+#        --limit pc1 -u labadmin --ask-become-pass
+#
+#   3. Verify:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/09_check_user_privileges.yml \
+#        --limit pc1 -u labadmin
+#
+# Expected hardened state:
+#   - labadmin is in sudo.
+#   - student/student123 is NOT in sudo.
+# =============================================================================
+
+- name: Revoke sudo from classroom student account
+  hosts: students
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../config/lab_settings.yml
+
+  vars:
+    effective_lab_admin_user: "{{ lab_admin_user | default('labadmin', true) | trim }}"
+    effective_student_user: >-
+      {{
+        lab_student_user
+        | default(lab_student_user_default | default(ansible_user | default('', true), true), true)
+        | trim
+      }}
+    effective_sudo_group_name: "{{ sudo_group_name | default('sudo', true) | trim }}"
+    effective_allow_revoke_current_ansible_user: >-
+      {{ allow_revoke_current_ansible_user | default(false) | bool }}
+
+  pre_tasks:
+    - name: Identify actual Ansible connection user
+      ansible.builtin.command:
+        argv:
+          - whoami
+      become: false
+      register: connection_user
+      changed_when: false
+
+    - name: Validate revoke configuration
+      ansible.builtin.assert:
+        that:
+          - effective_lab_admin_user | length > 0
+          - effective_student_user | length > 0
+          - effective_sudo_group_name | length > 0
+          - effective_lab_admin_user != 'root'
+          - effective_student_user != 'root'
+          - effective_lab_admin_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_student_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_sudo_group_name is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_student_user != effective_lab_admin_user
+        fail_msg: >-
+          Unsafe revoke configuration. The student user must be non-empty,
+          valid, non-root, and different from the lab administrator user.
+      changed_when: false
+
+    - name: Refuse to revoke sudo from current Ansible connection user
+      ansible.builtin.assert:
+        that:
+          - effective_allow_revoke_current_ansible_user | bool
+            or effective_student_user != connection_user.stdout
+        fail_msg: >-
+          Refusing to revoke sudo from '{{ effective_student_user }}' because
+          Ansible is currently connected as that same user. Reconnect using
+          labadmin, or pass allow_revoke_current_ansible_user=true only if you
+          fully understand the risk.
+      changed_when: false
+
+    - name: Verify sudo group exists
+      ansible.builtin.command:
+        argv:
+          - getent
+          - group
+          - "{{ effective_sudo_group_name }}"
+      register: sudo_group_lookup
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if sudo group does not exist
+      ansible.builtin.assert:
+        that:
+          - sudo_group_lookup.rc == 0
+        fail_msg: >-
+          The sudo group '{{ effective_sudo_group_name }}' does not exist on
+          {{ inventory_hostname }}. This playbook expects Ubuntu-style sudo
+          group administration.
+      changed_when: false
+
+    - name: Verify lab administrator account exists
+      ansible.builtin.command:
+        argv:
+          - id
+          - "{{ effective_lab_admin_user }}"
+      register: lab_admin_id
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if lab administrator account is missing
+      ansible.builtin.assert:
+        that:
+          - lab_admin_id.rc == 0
+        fail_msg: >-
+          The lab administrator account '{{ effective_lab_admin_user }}' does
+          not exist on {{ inventory_hostname }}. Run
+          08_setup_labadmin_user.yml and test labadmin sudo before revoking
+          student sudo.
+      changed_when: false
+
+    - name: Verify lab administrator groups
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ effective_lab_admin_user }}"
+      register: lab_admin_groups
+      changed_when: false
+
+    - name: Stop if lab administrator does not have sudo
+      ansible.builtin.assert:
+        that:
+          - effective_sudo_group_name in lab_admin_groups.stdout.split()
+        fail_msg: >-
+          The lab administrator account '{{ effective_lab_admin_user }}' is not
+          in the '{{ effective_sudo_group_name }}' group. Do NOT revoke student
+          sudo until labadmin has working sudo access.
+      changed_when: false
+
+    - name: Verify student account exists
+      ansible.builtin.command:
+        argv:
+          - id
+          - "{{ effective_student_user }}"
+      register: student_id
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if student account is missing
+      ansible.builtin.assert:
+        that:
+          - student_id.rc == 0
+        fail_msg: >-
+          The configured student account '{{ effective_student_user }}' does
+          not exist on {{ inventory_hostname }}. Check lab_student_user in
+          inventory.ini or lab_student_user_default in config/lab_settings.yml.
+      changed_when: false
+
+    - name: Read student groups before revoke
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ effective_student_user }}"
+      register: student_groups_before
+      changed_when: false
+
+    - name: Determine whether student currently has sudo
+      ansible.builtin.set_fact:
+        student_had_sudo_before: >-
+          {{ effective_sudo_group_name in student_groups_before.stdout.split() }}
+      changed_when: false
+
+  tasks:
+    - name: Remove student from sudo group when needed
+      ansible.builtin.command:
+        argv:
+          - gpasswd
+          - --delete
+          - "{{ effective_student_user }}"
+          - "{{ effective_sudo_group_name }}"
+      register: revoke_result
+      changed_when: revoke_result.rc == 0
+      when: student_had_sudo_before | bool
+
+    - name: Read student groups after revoke
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ effective_student_user }}"
+      register: student_groups_after
+      changed_when: false
+
+    - name: Verify sudo was removed from student account
+      ansible.builtin.assert:
+        that:
+          - effective_sudo_group_name not in student_groups_after.stdout.split()
+        fail_msg: >-
+          The student account '{{ effective_student_user }}' still appears in
+          the '{{ effective_sudo_group_name }}' group. Recheck the account and
+          group configuration.
+      changed_when: false
+
+    - name: Display revoke summary
+      ansible.builtin.debug:
+        msg:
+          - "Student sudo revoke completed."
+          - "Host: {{ inventory_hostname }}"
+          - "Ansible connection user: {{ connection_user.stdout }}"
+          - "Lab administrator user: {{ effective_lab_admin_user }}"
+          - "Lab administrator groups: {{ lab_admin_groups.stdout }}"
+          - "Student user: {{ effective_student_user }}"
+          - "Student groups before: {{ student_groups_before.stdout }}"
+          - "Student groups after: {{ student_groups_after.stdout }}"
+          - "Student had sudo before: {{ student_had_sudo_before }}"
+          - >-
+            {{
+              'Sudo was removed from the student account.'
+              if student_had_sudo_before
+              else 'No change needed; the student account was already not in sudo.'
+            }}
+          - "No users were deleted."
+          - "No student files were modified."
+          - "If the student was already logged in, log out or reboot before testing the new limited session."
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+# Notes
+#
+# This playbook removes only sudo-group membership from the configured classroom
+# student account.
+#
+# It does not remove other groups and does not delete the user. The purpose is
+# to make the student account limited while preserving normal classroom use.
+#
+# Rollback:
+#
+#   ansible-playbook -i inventory.ini \
+#     playbooks/11_grant_student_sudo.yml \
+#     --limit pc1 -u labadmin --ask-become-pass
+#
+# Safe scaling:
+#
+#   Test on pc1 first. After verification, apply to selected PCs or to the full
+#   students group during an appropriate maintenance window.
+# -----------------------------------------------------------------------------

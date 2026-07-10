@@ -279,7 +279,7 @@ Each computer contains:
 Example:
 
 ```
-pc1 ansible_host=172.xxx.xxx.xxx ansible_user=student
+pc1 ansible_host=172.xxx.xxx.xxx ansible_user=labadmin lab_student_user=student123
 ```
 
 When adding a new laboratory computer:
@@ -438,3 +438,195 @@ This toolkit was developed to simplify the management of Ubuntu laboratory compu
 The modular structure allows future instructors and students to extend the project with additional playbooks as laboratory requirements evolve.
 
 Always validate new playbooks on a single workstation before deploying them across the entire laboratory.
+# User Privilege Management
+
+Each student PC uses `labadmin` as the professor/Ansible administrator and a
+classroom account such as `student123` as a normal, non-sudo user. Use the safe
+order: setup labadmin, check privileges, revoke student sudo, then verify.
+Granting sudo restores full administrator power and should be temporary.
+Passwords and private inventory details must stay out of the repository.
+
+The setup playbook prefers `~/.ssh/id_ed25519.pub` on PC0 and falls back to
+`~/.ssh/id_rsa.pub`. Set `lab_admin_public_key_file` only when another public
+key must be used.
+
+### Real-lab acceptance test: pc1
+
+Run this sequence on Ubuntu PC0, testing only `pc1` first. Keep
+`inventory.ini` private and set `ansible_user=labadmin` only after its SSH and
+sudo access have been verified.
+
+1. Pull the updated repository on PC0.
+
+   ```bash
+   cd ~/ansible-ubuntu-lab-management
+   git pull origin main
+   ```
+
+2. Run local syntax checks on PC0.
+
+   ```bash
+   bash -n labmanage
+   bash -n scripts/manage_lab.sh
+   bash -n scripts/run_with_logging.sh
+   ansible-playbook --syntax-check playbooks/08_setup_labadmin_user.yml
+   ansible-playbook --syntax-check playbooks/09_check_user_privileges.yml
+   ansible-playbook --syntax-check playbooks/10_revoke_student_sudo.yml
+   ansible-playbook --syntax-check playbooks/11_grant_student_sudo.yml
+   ```
+
+3. Check current privileges on pc1.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 --ask-become-pass
+   ```
+
+4. Set up labadmin on pc1 if needed.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/08_setup_labadmin_user.yml --limit pc1 --ask-become-pass
+   ```
+
+5. Test labadmin SSH.
+
+   ```bash
+   ansible -i inventory.ini pc1 -u labadmin -m ping
+   ```
+
+6. Test labadmin sudo. Expected result: `root`.
+
+   ```bash
+   ansible -i inventory.ini pc1 -u labadmin -m command -a "whoami" -b --ask-become-pass
+   ```
+
+7. Revoke sudo from the student account on pc1.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/10_revoke_student_sudo.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
+
+8. Check privileges again. Expected: labadmin remains in `sudo` and `student123`
+   is no longer in `sudo`.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
+
+9. Test the existing toolkit with labadmin. Expected: `failed=0` and
+   `unreachable=0`.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
+
+10. Roll back by granting sudo again if required.
+
+    ```bash
+    ansible-playbook -i inventory.ini playbooks/11_grant_student_sudo.yml --limit pc1 -u labadmin --ask-become-pass
+    ```
+
+11. Check privileges after rollback. Expected: `student123` appears in `sudo`
+    again.
+
+    ```bash
+    ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin --ask-become-pass
+    ```
+
+# Student Auto-Login Management
+
+Student auto-login starts the PC directly in the classroom account, such as
+`student123`; it must never target `labadmin`. It does not create an empty
+password or reveal the classroom password. Students should normally have sudo
+revoked before auto-login is enabled, and physical verification after a reboot
+or logout is required.
+
+Configure auto-login on one PC first:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/12_configure_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass
+```
+
+Disable it when a normal graphical login screen is needed again:
+
+```bash
+ansible-playbook -i inventory.ini playbooks/13_disable_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass
+```
+
+## Real-lab auto-login acceptance test: pc1
+
+1. Pull the latest project on PC0.
+
+   ```bash
+   cd ~/ansible-ubuntu-lab-management
+   git pull origin main
+   ```
+
+2. Run syntax checks on Ubuntu PC0.
+
+   ```bash
+   bash -n labmanage
+   bash -n scripts/manage_lab.sh
+   bash -n scripts/run_with_logging.sh
+   ansible-playbook --syntax-check playbooks/12_configure_student_autologin.yml
+   ansible-playbook --syntax-check playbooks/13_disable_student_autologin.yml
+   ```
+
+3. Confirm that labadmin works. The sudo command must return `root`.
+
+   ```bash
+   ansible -i inventory.ini pc1 -u labadmin -m ping
+   ansible -i inventory.ini pc1 -u labadmin -m command -a "whoami" -b --ask-become-pass
+   ```
+
+4. Confirm privileges: labadmin has sudo and `student123` does not.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin
+   ```
+
+5. Configure student auto-login.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/12_configure_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
+
+6. Reboot pc1 or physically log out/in. Verify that pc1 opens the student
+   desktop automatically, never the labadmin desktop.
+
+7. Verify Ansible access still works after reboot.
+
+   ```bash
+   ansible -i inventory.ini pc1 -u labadmin -m ping
+   ```
+
+8. Disable auto-login if needed, then reboot or log out and verify that the
+   graphical login screen is shown.
+
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/13_disable_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
+
+# Current Professor Workflow
+
+On Ubuntu PC0, start the menu with:
+
+```bash
+chmod +x labmanage
+./labmanage
+```
+
+The main menu runs preflight, connection, status, update, install, shared
+materials, cleanup, reboot-if-required, and the user privilege/auto-login
+submenu. The submenu sets up labadmin, checks privileges, revokes or grants
+student sudo, and configures or disables student auto-login.
+
+Changing actions require an explicit target and confirmation. Test pc1 first,
+then a small group, before considering the full lab.
+
+Use this order: preflight; connection check; setup labadmin; test labadmin SSH
+and sudo; check privileges; revoke student sudo; check again; configure student
+auto-login; reboot/logout and physically verify. Grant sudo is a temporary
+exception/rollback. Disable auto-login is the graphical rollback/control action.
+
+Ubuntu Ansible syntax checks and controlled pc1 testing are pending. This
+manual does not claim a completed real-lab or full-lab rollout.

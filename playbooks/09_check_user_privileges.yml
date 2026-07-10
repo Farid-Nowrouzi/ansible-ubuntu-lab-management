@@ -1,0 +1,231 @@
+---
+# =============================================================================
+# Playbook: 09_check_user_privileges.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Inspect the current user privilege state on Ubuntu student computers.
+#   This playbook reports whether the lab administrator account and the
+#   classroom student account exist, and whether either account belongs to
+#   the sudo group.
+#
+# Security model:
+#   - labadmin:
+#       Administrator account used by Ansible/professor.
+#       Should have sudo access.
+#
+#   - student/student123:
+#       Classroom account used by students.
+#       Should normally NOT have sudo access after hardening.
+#
+# What this playbook does:
+#   - Checks whether the lab administrator user exists.
+#   - Checks whether the student classroom user exists.
+#   - Displays the groups for both users.
+#   - Displays sudo group membership.
+#   - Reports whether each user has sudo access.
+#
+# What this playbook does NOT do:
+#   - Does NOT create users.
+#   - Does NOT remove sudo privileges.
+#   - Does NOT grant sudo privileges.
+#   - Does NOT change passwords.
+#   - Does NOT modify files.
+#   - Does NOT reboot the computer.
+#
+# Safety:
+#   - This is a read-only inspection playbook.
+#   - It does not require sudo.
+#   - It is safe to run before and after privilege changes.
+#
+# Recommended workflow:
+#   1. Run before making changes:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/09_check_user_privileges.yml --limit pc1
+#
+#   2. Run again after revoking or granting sudo:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin
+#
+# Expected hardened state:
+#   - labadmin is present and belongs to sudo.
+#   - student/student123 is present and does NOT belong to sudo.
+# =============================================================================
+
+- name: Inspect lab user privilege state
+  hosts: students
+  become: false
+  gather_facts: false
+
+  vars_files:
+    - ../config/lab_settings.yml
+
+  vars:
+    effective_lab_admin_user: "{{ lab_admin_user | default('labadmin', true) | trim }}"
+    effective_sudo_group_name: "{{ sudo_group_name | default('sudo', true) | trim }}"
+    effective_student_user: >-
+      {{
+        lab_student_user
+        | default(lab_student_user_default | default(ansible_user | default('', true), true), true)
+        | trim
+      }}
+
+  pre_tasks:
+    - name: Validate privilege inspection configuration
+      ansible.builtin.assert:
+        that:
+          - effective_lab_admin_user | length > 0
+          - effective_lab_admin_user != 'root'
+          - effective_lab_admin_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_student_user | length > 0
+          - effective_student_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_sudo_group_name | length > 0
+        fail_msg: >-
+          Invalid privilege-inspection configuration. Check lab_admin_user,
+          lab_student_user or lab_student_user_default, and sudo_group_name
+          in config/lab_settings.yml or inventory variables.
+      changed_when: false
+
+  tasks:
+    - name: Inspect Ansible connection user
+      ansible.builtin.command:
+        argv:
+          - whoami
+      register: connection_user
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect lab administrator passwd entry
+      ansible.builtin.command:
+        argv:
+          - getent
+          - passwd
+          - "{{ effective_lab_admin_user }}"
+      register: lab_admin_passwd
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect lab administrator groups
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ effective_lab_admin_user }}"
+      register: lab_admin_groups
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect student passwd entry
+      ansible.builtin.command:
+        argv:
+          - getent
+          - passwd
+          - "{{ effective_student_user }}"
+      register: student_passwd
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect student groups
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ effective_student_user }}"
+      register: student_groups
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect sudo group membership
+      ansible.builtin.command:
+        argv:
+          - getent
+          - group
+          - "{{ effective_sudo_group_name }}"
+      register: sudo_group
+      changed_when: false
+      failed_when: false
+
+    - name: Determine privilege status
+      ansible.builtin.set_fact:
+        lab_admin_exists: "{{ lab_admin_passwd.rc == 0 }}"
+        student_exists: "{{ student_passwd.rc == 0 }}"
+        sudo_group_exists: "{{ sudo_group.rc == 0 }}"
+        lab_admin_has_sudo: >-
+          {{
+            lab_admin_groups.rc == 0
+            and effective_sudo_group_name in lab_admin_groups.stdout.split()
+          }}
+        student_has_sudo: >-
+          {{
+            student_groups.rc == 0
+            and effective_sudo_group_name in student_groups.stdout.split()
+          }}
+      changed_when: false
+
+    - name: Display privilege inspection report
+      ansible.builtin.debug:
+        msg:
+          - "Privilege inspection completed."
+          - "Host: {{ inventory_hostname }}"
+          - "Ansible connection user: {{ connection_user.stdout | default('unknown') }}"
+          - "Configured administrator user: {{ effective_lab_admin_user }}"
+          - "Configured student user: {{ effective_student_user }}"
+          - "Sudo group name: {{ effective_sudo_group_name }}"
+          - "Administrator exists: {{ lab_admin_exists }}"
+          - "Administrator groups: {{ lab_admin_groups.stdout if lab_admin_groups.rc == 0 else 'unavailable / user missing' }}"
+          - "Administrator has sudo: {{ lab_admin_has_sudo }}"
+          - "Student exists: {{ student_exists }}"
+          - "Student groups: {{ student_groups.stdout if student_groups.rc == 0 else 'unavailable / user missing' }}"
+          - "Student has sudo: {{ student_has_sudo }}"
+          - "Sudo group exists: {{ sudo_group_exists }}"
+          - "Sudo group entry: {{ sudo_group.stdout if sudo_group.rc == 0 else 'unavailable / group missing' }}"
+      changed_when: false
+
+    - name: Display safety interpretation
+      ansible.builtin.debug:
+        msg:
+          - "Safety interpretation:"
+          - >-
+            {{
+              'OK: administrator user exists and has sudo.'
+              if lab_admin_exists and lab_admin_has_sudo
+              else 'WARNING: administrator user is missing or does not have sudo. Do NOT revoke student sudo until this is fixed.'
+            }}
+          - >-
+            {{
+              'OK: student user is limited and does not have sudo.'
+              if student_exists and not student_has_sudo
+              else 'NOTICE: student user currently has sudo or is missing. If the user has sudo, revoke only after labadmin is confirmed working.'
+            }}
+          - >-
+            {{
+              'WARNING: Ansible is connected as the same user selected as the classroom student account. Revoking sudo from this user may break admin playbooks unless you reconnect as labadmin.'
+              if connection_user.stdout | default('') == effective_student_user
+              else 'OK: Ansible connection user is not the classroom student user.'
+            }}
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+# Notes
+#
+# This playbook is intentionally read-only.
+#
+# Use it:
+#
+#   - Before creating or changing user privileges.
+#   - After setting up labadmin.
+#   - After revoking sudo from the student account.
+#   - After granting sudo back as a rollback.
+#
+# Healthy hardened state:
+#
+#   - labadmin exists.
+#   - labadmin is in sudo.
+#   - student/student123 exists.
+#   - student/student123 is NOT in sudo.
+#
+# If Ansible is still connecting as the student user, update the inventory or
+# use "-u labadmin" before running administrative playbooks.
+# -----------------------------------------------------------------------------

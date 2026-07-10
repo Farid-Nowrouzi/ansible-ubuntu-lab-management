@@ -20,6 +20,37 @@ The project follows several fundamental security principles.
 
 ## 1. Least Privilege
 
+Student classroom accounts should not have sudo by default. Separate roles:
+`labadmin` is the administrator used by Ansible; `student123` (or the configured
+classroom user) is a normal learning account. Grant sudo only for a specific,
+controlled task and revoke it afterward.
+
+## Auto-login security considerations
+
+Configure graphical auto-login only for the limited classroom student account,
+never for `labadmin`. Auto-login is not an empty password: do not use empty
+passwords and do not share the labadmin password with students. Revoke student
+sudo before enabling auto-login, then physically verify the account selected at
+the desktop after reboot or logout.
+
+## Current Account and SSH Safeguards
+
+`labadmin` is the professor/Ansible administrator. The classroom account
+(`student123` by default) should normally not have sudo and is the only valid
+auto-login target. Never share the labadmin password with students.
+
+Keep `lab_admin_password_hash` empty in committed configuration. If a hash is
+intentionally used, keep it private; never store plaintext passwords. Never
+commit SSH private keys, and keep `inventory.ini` private.
+
+The current `ansible.cfg` sets `host_key_checking = False` as a lab
+convenience. This is a security trade-off because normal SSH host authenticity
+checking is reduced. The professor or maintainer should review it before a
+wider rollout.
+
+Logs can contain IP addresses, usernames, hostnames, package details, and
+system output. Review them before sharing outside the lab team.
+
 Always perform operations using the lowest level of privilege required.
 
 Only use:

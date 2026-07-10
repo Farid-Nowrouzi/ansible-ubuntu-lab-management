@@ -56,7 +56,7 @@
         paths: /tmp
         recurse: true
         file_type: file
-        age: 7d
+        age: "{{ clean_temp_files_older_than }}"
       register: old_temp_files
       when: clean_temp_files | bool
 

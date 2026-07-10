@@ -43,6 +43,9 @@ The professor can safely change these values in `config/lab_settings.yml`:
 - `shared_materials_group`
 - `shared_materials_directory_mode`
 - `shared_materials_file_mode`
+- `student_autologin_enabled`
+- `student_autologin_display_manager`
+- `student_autologin_reboot_after_change`
 - `minimum_free_disk_gb`
 - `minimum_memory_mb_warning`
 - `clean_package_cache`
@@ -73,15 +76,68 @@ ansible-playbook -i inventory.ini playbooks/04_install_required_software.yml --l
 
 ## Change Shared Materials Destination
 
-Edit:
+Shared materials go to the classroom student account, which is not necessarily
+the Ansible administrator account. The project resolves the destination and
+ownership in this order:
 
-```yaml
-shared_materials_destination: "/home/{{ ansible_user }}/Lab_Materials"
-shared_materials_owner: "{{ ansible_user }}"
-shared_materials_group: "{{ ansible_user }}"
+1. `lab_student_user` host variable
+2. `lab_student_user_default` in `config/lab_settings.yml`
+3. `ansible_user` as a fallback for older or simple setups
+
+For example:
+
+```ini
+pc1 ansible_host=192.168.22.196 ansible_user=labadmin lab_student_user=student123
 ```
 
-The default uses the Ansible login user so files are copied into that user's home directory on each student PC.
+Ansible connects as `labadmin`, but shared materials are copied to
+`/home/student123/Lab_Materials`, not `/home/labadmin/Lab_Materials`.
+
+The default settings are:
+
+```yaml
+shared_materials_destination: "/home/{{ lab_student_user | default(lab_student_user_default | default(ansible_user), true) }}/Lab_Materials"
+shared_materials_owner: "{{ lab_student_user | default(lab_student_user_default | default(ansible_user), true) }}"
+shared_materials_group: "{{ lab_student_user | default(lab_student_user_default | default(ansible_user), true) }}"
+```
+
+## Configure Student Auto-Login
+
+The auto-login playbook always resolves the classroom user, not the Ansible
+administrator. Keep the safe defaults below unless a reboot immediately after a
+successful configuration is specifically desired.
+
+```yaml
+student_autologin_enabled: true
+student_autologin_display_manager: "auto"  # auto, gdm3, or lightdm
+student_autologin_reboot_after_change: false
+```
+
+Use `auto` to detect GDM3 or LightDM. The playbooks never change passwords or
+sudo privileges; use the separate privilege-management playbooks for those.
+
+## Current Settings Reference
+
+| Setting | Purpose |
+| --- | --- |
+| `required_packages` | Packages installed by playbook 04 |
+| `update_package_cache`, `upgrade_system_packages`, `autoremove_unused_packages`, `apt_cache_valid_time_seconds` | Update/cache behavior |
+| `shared_materials_source`, `shared_materials_destination`, `shared_materials_owner`, `shared_materials_group` | Student-facing material source and ownership |
+| `lab_admin_user`, `lab_student_user_default`, `sudo_group_name` | Account/group defaults |
+| `lab_admin_password_hash`, `lab_admin_public_key_file` | Optional labadmin credential/key settings; never plaintext or private keys |
+| `student_autologin_enabled`, `student_autologin_display_manager`, `student_autologin_reboot_after_change` | Student-only graphical auto-login behavior |
+| `minimum_free_disk_gb`, `minimum_memory_mb_warning` | Preflight thresholds |
+| `clean_package_cache`, `clean_apt_autoremove`, `clean_temp_files`, `clean_temp_files_older_than` | Cleanup behavior and temporary-file age |
+| `reboot_timeout_seconds` | Conditional reboot timeout |
+
+Shared materials and auto-login target the classroom student account, never
+labadmin. Do not put secrets, private IPs, passwords, or SSH private keys in
+this configuration file.
+
+The normal classroom-user resolution is `lab_student_user`, then
+`lab_student_user_default`, then `ansible_user`. The current shared-materials
+template also contains a final legacy `student` fallback if all three are empty;
+do not rely on it. Set an explicit classroom user instead.
 
 ## Change Update Behavior
 

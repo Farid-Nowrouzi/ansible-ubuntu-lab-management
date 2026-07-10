@@ -252,6 +252,12 @@ Examples:
 05_copy_shared_materials.yml
 06_clean_lab_computers.yml
 07_reboot_if_required.yml
+08_setup_labadmin_user.yml
+09_check_user_privileges.yml
+10_revoke_student_sudo.yml
+11_grant_student_sudo.yml
+12_configure_student_autologin.yml
+13_disable_student_autologin.yml
 ```
 
 Every playbook performs one clearly defined administrative operation.

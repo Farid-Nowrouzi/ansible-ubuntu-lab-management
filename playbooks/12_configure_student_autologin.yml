@@ -1,0 +1,434 @@
+---
+# =============================================================================
+# Playbook: 12_configure_student_autologin.yml
+# Project: Linux/Ubuntu Lab Management Toolkit
+#
+# Purpose:
+#   Enable graphical auto-login for the limited classroom student account on
+#   selected Ubuntu lab computers.
+#
+# Security model:
+#   - labadmin:
+#       Administrator account used by Ansible/professor.
+#       Must NOT be used for auto-login.
+#
+#   - student/student123:
+#       Classroom account used by students.
+#       Intended auto-login target.
+#       Should normally NOT have sudo before auto-login is enabled.
+#
+# What this playbook does:
+#   - Resolves the classroom student user safely.
+#   - Verifies the student user exists.
+#   - Rejects root and labadmin as auto-login targets.
+#   - Detects or uses configured display manager: gdm3 or lightdm.
+#   - Configures graphical auto-login for the student account.
+#   - Warns if the student account still has sudo.
+#   - Reboots only when explicitly enabled in lab_settings.yml.
+#
+# What this playbook does NOT do:
+#   - Does NOT create users.
+#   - Does NOT delete users.
+#   - Does NOT change passwords.
+#   - Does NOT grant sudo.
+#   - Does NOT revoke sudo.
+#   - Does NOT configure auto-login for labadmin.
+#   - Does NOT reboot by default.
+#
+# Safety:
+#   - Test on one computer first, for example pc1.
+#   - Revoke student sudo before enabling auto-login.
+#   - Physically verify after reboot/logout that the PC logs into the student
+#     account, not labadmin.
+#
+# Recommended workflow:
+#   1. Confirm labadmin works:
+#
+#      ansible -i inventory.ini pc1 -u labadmin -m ping
+#
+#      ansible -i inventory.ini pc1 -u labadmin \
+#        -m command -a "whoami" -b --ask-become-pass
+#
+#   2. Confirm student sudo is revoked:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin
+#
+#   3. Configure student auto-login:
+#
+#      ansible-playbook -i inventory.ini \
+#        playbooks/12_configure_student_autologin.yml \
+#        --limit pc1 -u labadmin --ask-become-pass
+#
+#   4. Reboot or log out/in and physically verify:
+#        pc1 opens the student desktop automatically.
+# =============================================================================
+
+- name: Configure classroom student graphical auto-login
+  hosts: students
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../config/lab_settings.yml
+
+  vars:
+    effective_lab_admin_user: "{{ lab_admin_user | default('labadmin', true) | trim }}"
+    effective_student_user: >-
+      {{
+        lab_student_user
+        | default(lab_student_user_default | default(ansible_user | default('', true), true), true)
+        | trim
+      }}
+    effective_sudo_group_name: "{{ sudo_group_name | default('sudo', true) | trim }}"
+    effective_autologin_display_manager: >-
+      {{ student_autologin_display_manager | default('auto', true) | trim | lower }}
+    effective_autologin_reboot: >-
+      {{ student_autologin_reboot_after_change | default(false) | bool }}
+
+  pre_tasks:
+    - name: Validate configured display-manager option
+      ansible.builtin.assert:
+        that:
+          - effective_autologin_display_manager in ['auto', 'gdm3', 'lightdm']
+        fail_msg: >-
+          student_autologin_display_manager must be one of:
+          auto, gdm3, or lightdm.
+      changed_when: false
+
+    - name: Require auto-login to be enabled in configuration
+      ansible.builtin.assert:
+        that:
+          - student_autologin_enabled | default(true) | bool
+        fail_msg: >-
+          student_autologin_enabled is false. Set it to true before enabling
+          auto-login, or use playbook 13_disable_student_autologin.yml to
+          disable auto-login.
+      changed_when: false
+
+    - name: Validate the lab administrator and classroom student users
+      ansible.builtin.assert:
+        that:
+          - effective_lab_admin_user | length > 0
+          - effective_student_user | length > 0
+          - effective_lab_admin_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_student_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - effective_lab_admin_user != 'root'
+          - effective_student_user != 'root'
+          - effective_student_user != effective_lab_admin_user
+        fail_msg: >-
+          Refusing unsafe auto-login configuration. The student user must be a
+          valid non-root Linux account and must not be the lab administrator
+          account.
+      changed_when: false
+
+    - name: Verify the classroom student user exists
+      ansible.builtin.command:
+        argv:
+          - id
+          - -u
+          - "{{ effective_student_user }}"
+      register: student_user_check
+      changed_when: false
+      failed_when: student_user_check.rc != 0
+
+    - name: Check classroom student group membership
+      ansible.builtin.command:
+        argv:
+          - id
+          - -nG
+          - "{{ effective_student_user }}"
+      register: student_groups
+      changed_when: false
+
+    - name: Determine whether the student currently has sudo
+      ansible.builtin.set_fact:
+        student_has_sudo: >-
+          {{ effective_sudo_group_name in student_groups.stdout.split() }}
+      changed_when: false
+
+    - name: Warn when the auto-login user still has sudo
+      ansible.builtin.debug:
+        msg:
+          - "STRONG WARNING: {{ effective_student_user }} is still in the {{ effective_sudo_group_name }} group."
+          - "Auto-login is safest only after student sudo has been revoked."
+          - "Recommended: run 10_revoke_student_sudo.yml before enabling auto-login."
+      when: student_has_sudo | bool
+      changed_when: false
+
+    - name: Verify a Debian-family operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['os_family'] == 'Debian'
+        fail_msg: >-
+          This playbook supports Ubuntu/Debian graphical systems only.
+      changed_when: false
+
+    - name: Check GDM3 service state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - gdm3
+      register: gdm3_service
+      changed_when: false
+      failed_when: false
+
+    - name: Check LightDM service state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - lightdm
+      register: lightdm_service
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect the system default display manager
+      ansible.builtin.command:
+        argv:
+          - cat
+          - /etc/X11/default-display-manager
+      register: default_display_manager
+      changed_when: false
+      failed_when: false
+
+    - name: Check GDM3 configuration directory
+      ansible.builtin.stat:
+        path: /etc/gdm3
+      register: gdm3_path
+      changed_when: false
+
+    - name: Check GDM3 custom configuration file
+      ansible.builtin.stat:
+        path: /etc/gdm3/custom.conf
+      register: gdm3_custom_conf_path
+      changed_when: false
+
+    - name: Check LightDM configuration directory
+      ansible.builtin.stat:
+        path: /etc/lightdm
+      register: lightdm_path
+      changed_when: false
+
+    - name: Select the display manager
+      ansible.builtin.set_fact:
+        selected_display_manager: >-
+          {{
+            effective_autologin_display_manager
+            if effective_autologin_display_manager in ['gdm3', 'lightdm']
+            else ('gdm3' if gdm3_service.rc == 0
+            else ('lightdm' if lightdm_service.rc == 0
+            else ('gdm3' if (default_display_manager.stdout | default('') | trim).endswith('/gdm3')
+            else ('lightdm' if (default_display_manager.stdout | default('') | trim).endswith('/lightdm')
+            else ('gdm3' if gdm3_path.stat.exists and not lightdm_path.stat.exists
+            else ('lightdm' if lightdm_path.stat.exists and not gdm3_path.stat.exists
+            else 'unsupported'))))))
+          }}
+      changed_when: false
+
+    - name: Require a supported display manager
+      ansible.builtin.assert:
+        that:
+          - selected_display_manager in ['gdm3', 'lightdm']
+        fail_msg: >-
+          Could not detect GDM3 or LightDM. This playbook supports only gdm3
+          and lightdm. Detection is intentionally stopped when both managers
+          are installed but no active/default manager can be identified. Set
+          student_autologin_display_manager explicitly only after verifying
+          which display manager the PC uses.
+      changed_when: false
+
+    - name: Verify selected GDM3 configuration directory exists
+      ansible.builtin.assert:
+        that:
+          - selected_display_manager != 'gdm3' or gdm3_path.stat.exists
+        fail_msg: >-
+          GDM3 was selected, but /etc/gdm3 does not exist. This usually means
+          gdm3 is not installed or the desktop environment is different.
+      changed_when: false
+
+    - name: Verify selected LightDM configuration directory exists
+      ansible.builtin.assert:
+        that:
+          - selected_display_manager != 'lightdm' or lightdm_path.stat.exists
+        fail_msg: >-
+          LightDM was selected, but /etc/lightdm does not exist. This usually
+          means lightdm is not installed or the desktop environment is different.
+      changed_when: false
+
+  tasks:
+    - name: Ensure the GDM3 custom configuration file exists
+      ansible.builtin.copy:
+        dest: /etc/gdm3/custom.conf
+        content: ""
+        force: false
+        owner: root
+        group: root
+        mode: "0644"
+      when: selected_display_manager == 'gdm3'
+      register: gdm3_custom_conf_created
+      notify: Reboot after auto-login change when configured
+
+    - name: Ensure the GDM3 daemon section exists
+      ansible.builtin.lineinfile:
+        path: /etc/gdm3/custom.conf
+        regexp: '^\s*\[daemon\]\s*$'
+        line: "[daemon]"
+        state: present
+      when: selected_display_manager == 'gdm3'
+      register: gdm3_daemon_section
+      notify: Reboot after auto-login change when configured
+
+    - name: Read current GDM3 custom configuration
+      ansible.builtin.slurp:
+        path: /etc/gdm3/custom.conf
+      when: selected_display_manager == 'gdm3'
+      register: gdm3_custom_conf_content
+      changed_when: false
+
+    - name: Check whether GDM3 managed auto-login block already exists
+      ansible.builtin.set_fact:
+        gdm3_managed_block_already_present: >-
+          {{
+            'ANSIBLE MANAGED STUDENT AUTOLOGIN'
+            in (gdm3_custom_conf_content.content | b64decode)
+          }}
+      when: selected_display_manager == 'gdm3'
+      changed_when: false
+
+    - name: Remove old unmanaged GDM3 AutomaticLoginEnable settings
+      ansible.builtin.lineinfile:
+        path: /etc/gdm3/custom.conf
+        regexp: '^\s*AutomaticLoginEnable\s*=.*$'
+        state: absent
+      when:
+        - selected_display_manager == 'gdm3'
+        - not (gdm3_managed_block_already_present | default(false) | bool)
+      register: gdm3_unmanaged_enable_removed
+      notify: Reboot after auto-login change when configured
+
+    - name: Remove old unmanaged GDM3 AutomaticLogin user settings
+      ansible.builtin.lineinfile:
+        path: /etc/gdm3/custom.conf
+        regexp: '^\s*AutomaticLogin\s*=.*$'
+        state: absent
+      when:
+        - selected_display_manager == 'gdm3'
+        - not (gdm3_managed_block_already_present | default(false) | bool)
+      register: gdm3_unmanaged_user_removed
+      notify: Reboot after auto-login change when configured
+
+    - name: Configure GDM3 student auto-login
+      ansible.builtin.blockinfile:
+        path: /etc/gdm3/custom.conf
+        marker: "# {mark} ANSIBLE MANAGED STUDENT AUTOLOGIN"
+        insertafter: '^\s*\[daemon\]\s*$'
+        block: |
+          AutomaticLoginEnable=true
+          AutomaticLogin={{ effective_student_user }}
+        owner: root
+        group: root
+        mode: "0644"
+      when: selected_display_manager == 'gdm3'
+      register: gdm3_autologin_configuration
+      notify: Reboot after auto-login change when configured
+
+    - name: Ensure the LightDM drop-in configuration directory exists
+      ansible.builtin.file:
+        path: /etc/lightdm/lightdm.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: selected_display_manager == 'lightdm'
+      register: lightdm_dropin_directory
+
+    - name: Configure LightDM student auto-login
+      ansible.builtin.copy:
+        dest: /etc/lightdm/lightdm.conf.d/90-lab-student-autologin.conf
+        content: |
+          # Managed by Ansible. Classroom student auto-login only.
+          [Seat:*]
+          autologin-user={{ effective_student_user }}
+          autologin-user-timeout=0
+        owner: root
+        group: root
+        mode: "0644"
+      when: selected_display_manager == 'lightdm'
+      register: lightdm_autologin_configuration
+      notify: Reboot after auto-login change when configured
+
+    - name: Determine whether auto-login configuration changed
+      ansible.builtin.set_fact:
+        autologin_configuration_changed: >-
+          {{
+            (gdm3_custom_conf_created.changed | default(false))
+            or (gdm3_daemon_section.changed | default(false))
+            or (gdm3_unmanaged_enable_removed.changed | default(false))
+            or (gdm3_unmanaged_user_removed.changed | default(false))
+            or (gdm3_autologin_configuration.changed | default(false))
+            or (lightdm_dropin_directory.changed | default(false))
+            or (lightdm_autologin_configuration.changed | default(false))
+          }}
+        autologin_configuration_file: >-
+          {{
+            '/etc/gdm3/custom.conf'
+            if selected_display_manager == 'gdm3'
+            else '/etc/lightdm/lightdm.conf.d/90-lab-student-autologin.conf'
+          }}
+      changed_when: false
+
+    - name: Apply configured reboot action
+      ansible.builtin.meta: flush_handlers
+
+    - name: Display auto-login configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "Student auto-login configuration completed."
+          - "Host: {{ inventory_hostname }}"
+          - "Student auto-login user: {{ effective_student_user }}"
+          - "Ansible administrator: {{ effective_lab_admin_user }}"
+          - "Display manager: {{ selected_display_manager }}"
+          - "Student currently has sudo: {{ 'yes' if student_has_sudo | bool else 'no' }}"
+          - "Configuration file: {{ autologin_configuration_file }}"
+          - "Configuration changed: {{ autologin_configuration_changed }}"
+          - "Reboot configured: {{ effective_autologin_reboot }}"
+          - "Reboot performed: {{ 'yes' if (autologin_configuration_changed | bool and effective_autologin_reboot | bool) else 'no' }}"
+          - >-
+            {{
+              'Auto-login configuration changed. Reboot or log out/in to physically verify.'
+              if autologin_configuration_changed | bool and not (effective_autologin_reboot | bool)
+              else 'Verify that the student desktop opens automatically and never logs in as labadmin.'
+            }}
+          - "No users were created, deleted, or renamed."
+          - "No passwords were changed."
+          - "No sudo privileges were changed."
+      changed_when: false
+
+  handlers:
+    - name: Reboot after auto-login change when configured
+      ansible.builtin.reboot:
+        msg: "Rebooting because student_autologin_reboot_after_change is true."
+      when: effective_autologin_reboot | bool
+
+# -----------------------------------------------------------------------------
+# Notes
+#
+# This playbook configures graphical auto-login only.
+#
+# It does not create labadmin, revoke sudo, grant sudo, or change passwords.
+# Those responsibilities belong to separate playbooks.
+#
+# Safe workflow before using this playbook:
+#
+#   1. Confirm labadmin has already been created and tested.
+#   2. Confirm labadmin can connect through SSH.
+#   3. Confirm labadmin can use sudo.
+#   4. Confirm the classroom student account no longer has sudo.
+#   5. Run this playbook to configure student auto-login.
+#   6. Reboot or log out/in and physically verify the result.
+#
+# Auto-login does not mean passwordless sudo. It only means the graphical desktop
+# opens automatically as the limited student user.
+# -----------------------------------------------------------------------------

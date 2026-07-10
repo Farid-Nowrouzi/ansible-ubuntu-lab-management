@@ -192,9 +192,9 @@ Example with username per host:
 
 ```ini
 [students]
-pc1 ansible_host=192.168.1.101 ansible_user=student
-pc2 ansible_host=192.168.1.102 ansible_user=student
-pc3 ansible_host=192.168.1.120 ansible_user=student
+pc1 ansible_host=192.168.1.101 ansible_user=labadmin lab_student_user=student123
+pc2 ansible_host=192.168.1.102 ansible_user=labadmin lab_student_user=student123
+pc3 ansible_host=192.168.1.120 ansible_user=labadmin lab_student_user=student123
 ```
 
 Example with shared username:
@@ -206,7 +206,8 @@ pc2 ansible_host=192.168.1.102
 pc3 ansible_host=192.168.1.120
 
 [students:vars]
-ansible_user=student
+ansible_user=labadmin
+lab_student_user=student123
 ansible_python_interpreter=/usr/bin/python3
 ```
 

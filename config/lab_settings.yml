@@ -5,28 +5,31 @@
 # ==============================================================================
 #
 # Purpose:
-#   This file controls normal lab-management settings.
-#
-# Professors or future maintainers can edit this file to change common behavior
-# without editing the Ansible playbooks directly.
-#
-# Safe to commit:
-#   Yes, this file is safe to commit because it should contain only generic
-#   settings.
-#
-# Do NOT put here:
-#   - passwords
-#   - SSH private keys
-#   - real IP addresses
-#   - private hostnames
-#   - student personal data
-#   - secret tokens
+#   This file controls normal lab-management settings used by the Ansible
+#   playbooks.
 #
 # Main idea:
 #   inventory.ini controls WHICH computers are managed.
 #   config/lab_settings.yml controls WHAT settings the playbooks use.
 #   shared_materials/ contains WHAT files are copied.
 #   ./labmanage is HOW the professor runs the system.
+#
+# Safe to commit:
+#   Yes, but only while this file contains generic, non-secret settings.
+#
+# Do NOT put here:
+#   - plaintext passwords
+#   - real SSH private keys
+#   - real IP addresses
+#   - private hostnames
+#   - student personal data
+#   - secret tokens
+#   - production credentials
+#
+# Important security note:
+#   lab_admin_password_hash must normally stay empty in the committed version.
+#   If a real password hash is needed, prefer a private inventory variable,
+#   Ansible Vault, or another non-committed configuration method.
 #
 # ==============================================================================
 
@@ -43,8 +46,9 @@
 #     - libreoffice
 #
 # Safety:
-#   Use official Ubuntu package names.
-#   Test on one PC first before installing on all lab computers.
+#   - Use official Ubuntu package names.
+#   - Test on one PC first before installing on all lab computers.
+#   - Avoid adding heavy or unnecessary packages without professor approval.
 # ------------------------------------------------------------------------------
 
 required_packages:
@@ -75,6 +79,11 @@ required_packages:
 #
 # apt_cache_valid_time_seconds:
 #   Avoids refreshing the package cache again if it was recently updated.
+#
+# Safety:
+#   - Test updates on one PC first.
+#   - Do not run during active class time.
+#   - Reboot is handled separately by playbook 07.
 # ------------------------------------------------------------------------------
 
 update_package_cache: true
@@ -93,21 +102,118 @@ apt_cache_valid_time_seconds: 3600
 #   2. Run ./labmanage
 #   3. Choose "Copy shared materials"
 #
-# Safety:
-#   Only files inside shared_materials/ are copied.
-#   This does not share the whole teacher/control computer.
+# Destination logic:
+#   Materials go to:
+#     1. lab_student_user from inventory.ini, when set
+#     2. lab_student_user_default from this file
+#     3. ansible_user as compatibility fallback
 #
-# Important:
-#   The destination uses ansible_user so files go to the SSH user's home
-#   directory on each student PC.
+# Example hardened inventory:
+#   pc1 ansible_host=192.168.x.x ansible_user=labadmin lab_student_user=student123
+#
+# In that case:
+#   - Ansible connects as labadmin.
+#   - Teaching materials are copied to /home/student123/Lab_Materials.
+#
+# Safety:
+#   - Only files inside shared_materials/ are copied.
+#   - This does not share the whole teacher/control computer.
+#   - This should not overwrite unrelated student home directories.
 # ------------------------------------------------------------------------------
 
 shared_materials_source: "shared_materials/"
-shared_materials_destination: "/home/{{ ansible_user }}/Lab_Materials"
-shared_materials_owner: "{{ ansible_user }}"
-shared_materials_group: "{{ ansible_user }}"
+shared_materials_destination: "/home/{{ lab_student_user | default(lab_student_user_default | default(ansible_user | default('student'), true), true) }}/Lab_Materials"
+shared_materials_owner: "{{ lab_student_user | default(lab_student_user_default | default(ansible_user | default('student'), true), true) }}"
+shared_materials_group: "{{ lab_student_user | default(lab_student_user_default | default(ansible_user | default('student'), true), true) }}"
 shared_materials_directory_mode: "0755"
 shared_materials_file_mode: "0644"
+
+
+# ------------------------------------------------------------------------------
+# User privilege management
+# Used by:
+#   playbooks/08_setup_labadmin_user.yml
+#   playbooks/09_check_user_privileges.yml
+#   playbooks/10_revoke_student_sudo.yml
+#   playbooks/11_grant_student_sudo.yml
+#
+# Security model:
+#   lab_admin_user:
+#     Administrator account used by the professor/Ansible.
+#     This account should have sudo access.
+#
+#   lab_student_user_default:
+#     Default classroom account used by students.
+#     This account should normally NOT have sudo after hardening.
+#
+#   sudo_group_name:
+#     Ubuntu normally uses the "sudo" group for administrator privileges.
+#
+#   lab_admin_password_hash:
+#     Optional password hash for lab_admin_user.
+#     Leave empty unless you intentionally want the setup playbook to set the
+#     labadmin password.
+#
+#   lab_admin_public_key_file:
+#     Optional public-key path on the professor/control PC.
+#     Leave empty to prefer:
+#       1. ~/.ssh/id_ed25519.pub
+#       2. ~/.ssh/id_rsa.pub
+#
+# Safety:
+#   - Never store plaintext passwords here.
+#   - Never configure an SSH private key path here.
+#   - Keep labadmin and the student account separate.
+#   - Test on one PC before applying to the full lab.
+# ------------------------------------------------------------------------------
+
+lab_admin_user: "labadmin"
+lab_student_user_default: "student123"
+sudo_group_name: "sudo"
+
+# Keep this empty in the committed version.
+# If used, it must be a real password hash, for example generated with:
+#   openssl passwd -6
+lab_admin_password_hash: ""
+
+# Optional public key override. Must point to a .pub file, not a private key.
+lab_admin_public_key_file: ""
+
+
+# ------------------------------------------------------------------------------
+# Student auto-login management
+# Used by:
+#   playbooks/12_configure_student_autologin.yml
+#   playbooks/13_disable_student_autologin.yml
+#
+# student_autologin_enabled:
+#   Controls whether playbook 12 is allowed to enable auto-login.
+#
+# student_autologin_display_manager:
+#   Supported values:
+#     auto    - detect GDM3 or LightDM automatically
+#     gdm3    - force GDM3 configuration
+#     lightdm - force LightDM configuration
+#
+# student_autologin_reboot_after_change:
+#   false:
+#     Do not reboot automatically. Recommended default.
+#
+#   true:
+#     Reboot automatically only after an auto-login configuration change.
+#
+# Safety:
+#   - Auto-login must target the classroom student account.
+#   - Auto-login must never target labadmin.
+#   - Auto-login does not store or use a password.
+#   - Auto-login does not grant sudo.
+#   - Revoke student sudo before enabling auto-login.
+#   - Physical verification after reboot/logout is still required.
+# ------------------------------------------------------------------------------
+
+student_autologin_enabled: true
+student_autologin_display_manager: "auto"
+student_autologin_reboot_after_change: false
 
 
 # ------------------------------------------------------------------------------
@@ -146,7 +252,9 @@ minimum_memory_mb_warning: 2048
 #   Keep this conservative.
 #
 # Safety:
-#   Cleanup should never delete student home directories or documents.
+#   - Cleanup should never delete student home directories.
+#   - Cleanup should never delete student documents.
+#   - Cleanup should not remove teaching materials.
 # ------------------------------------------------------------------------------
 
 clean_package_cache: true
@@ -160,9 +268,14 @@ clean_temp_files_older_than: "7d"
 # Used by:
 #   playbooks/07_reboot_if_required.yml
 #
-# This does not make reboot automatic in the menu.
-# The menu still asks for confirmation.
-# The playbook should reboot only when Ubuntu creates:
+# reboot_timeout_seconds:
+#   Maximum time to wait for a PC to reboot and reconnect.
+#
+# Safety:
+#   This does not make reboot automatic in the menu.
+#   The menu still asks for strong confirmation.
+#
+# The reboot playbook should reboot only when Ubuntu creates:
 #   /var/run/reboot-required
 # ------------------------------------------------------------------------------
 

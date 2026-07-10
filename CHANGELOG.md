@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased - Controlled Lab Testing Preparation
+
+### Added
+
+- Added privilege-management playbooks 08-11 and student auto-login playbooks
+  12-13 with menu integration.
+
+### Changed
+
+- Hardened menu confirmations, explicit-target handling, and unsafe command
+  option filtering.
+- Hardened the logging helper's inventory filtering and secret-safe rejection.
+- Updated central settings for privilege, auto-login, update-cache, and cleanup
+  behavior.
+- Code audit fixes now use `apt_cache_valid_time_seconds` and
+  `clean_temp_files_older_than`, validate SSH public keys, and fail safely on
+  ambiguous display-manager detection.
+
+### Pending validation
+
+- Ubuntu PC0 Ansible syntax checks and controlled pc1 real-lab testing remain
+  pending. This changelog does not claim a completed full-lab rollout.
+
+## Student privilege management extension
+
+- Added playbooks 08-11 to create/check `labadmin`, safely revoke student sudo, and grant it back when required.
+- Added student-aware shared-material delivery, configuration variables, menu integration, and documentation.
+- Added student auto-login management playbooks and menu integration.
+
 ## [0.1.0] - Initial Toolkit Foundation
 
 ### Added
@@ -97,18 +126,19 @@ All notable changes to this project will be documented in this file.
 - Improved logging helper error handling for interrupted runs and unwritable `reports/` directories.
 - Updated professor-facing documentation to describe the menu exit behavior and final confirmation step.
 
-## [0.7.0] - Final Real-Lab Validation
+## [0.7.0] - Historical Documentation Draft (Superseded)
 
 ### Changed
 
-- Polished `FINAL_TEST_REPORT.md` into a clean final validation report.
+- Polished `FINAL_TEST_REPORT.md` into a clean final validation report template.
 - Updated shared-materials settings to use the Ansible login user dynamically for the destination, owner, and group.
 - Improved advanced-options handling so blank, `n`, `no`, and `none` are treated as no advanced options.
 - Clarified the case-sensitive capital `YES` reboot confirmation.
 - Improved unreachable-host result messaging while preserving the real Ansible exit code.
-- Updated project status to reflect completed real-lab validation and handover readiness.
+- Updated project status documentation at that time.
 
 ### Notes
 
-- Real lab validation confirmed that all reachable hosts completed the tested workflows successfully.
-- One configured host was unreachable/offline during full-group testing and should be checked separately as normal lab maintenance.
+- Do not treat this historical section as evidence that the current privilege
+  management, auto-login workflow, Ubuntu syntax checks, or full-lab rollout
+  have been completed.

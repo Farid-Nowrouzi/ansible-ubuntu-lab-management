@@ -59,16 +59,22 @@ After confirming success, run without `--limit`.
 
 ## Playbook Summary Table
 
-| Playbook | Changes System? | Requires become? | Main Use |
+| Playbook | Changes system? | Become? | Expected result |
 |---|---:|---:|---|
-| `00_preflight_check.yml` | No | Yes, only for a harmless check | Verify lab readiness before risky tasks |
-| `01_check_connection.yml` | No | No | Verify Ansible communication |
-| `02_collect_lab_status.yml` | No | No | Collect status/facts |
-| `03_update_system.yml` | Yes | Yes | Update packages |
-| `04_install_required_software.yml` | Yes | Yes | Install required software |
-| `05_copy_shared_materials.yml` | Yes | Yes | Copy approved files |
-| `06_clean_lab_computers.yml` | Yes | Yes | Clean apt cache/packages |
-| `07_reboot_if_required.yml` | Yes | Yes | Conditional reboot |
+| `00_preflight_check.yml` | No | Harmless sudo check | Readiness checks pass |
+| `01_check_connection.yml` | No | No | Ansible ping succeeds |
+| `02_collect_lab_status.yml` | No | No | Status summary is displayed |
+| `03_update_system.yml` | Yes | Yes | Configured updates are applied; no reboot |
+| `04_install_required_software.yml` | Yes | Yes | Configured packages are present |
+| `05_copy_shared_materials.yml` | Yes | Yes | Materials reach the classroom user |
+| `06_clean_lab_computers.yml` | Yes | Yes | Configured APT/temporary cleanup completes |
+| `07_reboot_if_required.yml` | Yes | Yes | Reboot only when Ubuntu requests it |
+| `08_setup_labadmin_user.yml` | Yes | Yes | labadmin has sudo and the control-PC key |
+| `09_check_user_privileges.yml` | No | No | User and sudo state is reported |
+| `10_revoke_student_sudo.yml` | Yes | Yes | Student is no longer in sudo |
+| `11_grant_student_sudo.yml` | Yes | Yes | Student is in sudo temporarily |
+| `12_configure_student_autologin.yml` | Yes | Yes | Student auto-login is configured for verification |
+| `13_disable_student_autologin.yml` | Yes | Yes | Managed auto-login is disabled |
 
 ---
 
@@ -400,3 +406,43 @@ For all playbooks that change the system:
 ```text
 Run preflight first -> test one PC -> confirm result -> run on all reachable PCs
 ```
+# User privilege playbooks
+
+* `08_setup_labadmin_user.yml` creates `labadmin`, installs the control-PC SSH
+  key, and adds sudo. Run first using the existing administrator account.
+* `09_check_user_privileges.yml` is read-only and reports both users and the
+  sudo group; it is safe to run anytime.
+* `10_revoke_student_sudo.yml` removes only the classroom user's sudo group
+  membership after verifying labadmin. Example: `ansible-playbook -i
+  inventory.ini playbooks/10_revoke_student_sudo.yml --limit pc1 -u labadmin`.
+* `11_grant_student_sudo.yml` restores sudo for a selected classroom user.
+  Treat this as temporary administrator access and verify afterward.
+
+# Student auto-login playbooks
+
+* `12_configure_student_autologin.yml` enables graphical auto-login for the
+  effective classroom student user, never `labadmin`. Use after confirming the
+  student account is limited; it changes GDM3 or LightDM configuration but does
+  not change passwords, users, or sudo. Example: `ansible-playbook -i
+  inventory.ini playbooks/12_configure_student_autologin.yml --limit pc1 -u
+  labadmin --ask-become-pass`. Expected result: after reboot or logout, the
+  selected student desktop opens automatically.
+* `13_disable_student_autologin.yml` removes the managed auto-login setting and
+  restores normal graphical-login behavior. It does not change users,
+  passwords, or sudo. Example: `ansible-playbook -i inventory.ini
+  playbooks/13_disable_student_autologin.yml --limit pc1 -u labadmin
+  --ask-become-pass`. Expected result: after reboot or logout, the login screen
+  is shown.
+
+## Detailed reference: playbooks 08-13
+
+| Playbook | System change / become | Example | Safety and expected result |
+| --- | --- | --- | --- |
+| `08_setup_labadmin_user.yml` | Creates/prepares labadmin; become required | `ansible-playbook -i inventory.ini playbooks/08_setup_labadmin_user.yml --limit pc1 --ask-become-pass` | Validates a control-PC public key, appends sudo, and never revokes student sudo. Test SSH and sudo before continuing. |
+| `09_check_user_privileges.yml` | Read-only; no become | `ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin` | Reports connection user, accounts, groups, and sudo state. |
+| `10_revoke_student_sudo.yml` | Removes only student sudo membership; become required | `ansible-playbook -i inventory.ini playbooks/10_revoke_student_sudo.yml --limit pc1 -u labadmin --ask-become-pass` | Verifies labadmin first and preserves other groups. Student should no longer be in sudo. |
+| `11_grant_student_sudo.yml` | Grants sudo; become required | `ansible-playbook -i inventory.ini playbooks/11_grant_student_sudo.yml --limit pc1 -u labadmin --ask-become-pass` | Temporary exception/rollback; uses `append: true`. Student gains administrator power. |
+| `12_configure_student_autologin.yml` | Changes display-manager config; become required | `ansible-playbook -i inventory.ini playbooks/12_configure_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass` | Targets the classroom user only, never root/labadmin. Physically verify after reboot/logout. |
+| `13_disable_student_autologin.yml` | Disables managed auto-login; become required | `ansible-playbook -i inventory.ini playbooks/13_disable_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass` | Rollback/control action. After reboot/logout, the normal login screen should appear. |
+
+The Ubuntu PC0 Ansible syntax checks and controlled pc1 test are pending.

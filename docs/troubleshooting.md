@@ -244,13 +244,13 @@ whoami
 Make sure `inventory.ini` uses the same username:
 
 ```ini
-pc1 ansible_host=172.16.0.149 ansible_user=student
+pc1 ansible_host=172.16.0.149 ansible_user=labadmin lab_student_user=student123
 ```
 
 ### Test manually
 
 ```bash
-ssh student@172.16.0.149
+ssh labadmin@172.16.0.149
 ```
 
 ### Copy SSH key again
@@ -304,7 +304,7 @@ Example:
 
 ```ini
 [students]
-pc1 ansible_host=172.16.0.149 ansible_user=student
+pc1 ansible_host=172.16.0.149 ansible_user=labadmin lab_student_user=student123
 ```
 
 ### List hosts
@@ -722,7 +722,7 @@ nano inventory.ini
 Example:
 
 ```ini
-pc4 ansible_host=172.16.0.183 ansible_user=student
+pc4 ansible_host=172.16.0.183 ansible_user=labadmin lab_student_user=student123
 ```
 
 Save and test:
@@ -1054,3 +1054,51 @@ Fix the basic layer first, then continue upward.
 ```text
 Network → SSH → Inventory → Ansible ping → Playbook
 ```
+# User privilege issues
+
+- **labadmin SSH works but sudo fails:** verify labadmin is in `sudo`, use
+  `--ask-become-pass`, and check the password policy on the PC.
+- **Permission denied as labadmin:** run playbook 08 with the old working admin
+  account, verify the authorized key and home directory permissions.
+- **Student still appears in sudo:** refresh the session, run playbook 09, and
+  confirm the correct `lab_student_user` in private inventory.
+- **Materials copied to labadmin:** define `lab_student_user` (or the default)
+  and rerun playbook 05; destination ownership follows that account.
+- **Inventory still uses student123 as ansible_user:** change it to
+  `ansible_user=labadmin`; keep `lab_student_user=student123`.
+
+# Student auto-login issues
+
+- **PC does not auto-login after reboot:** check playbook 12 output, confirm
+  the detected display manager, then reboot or log out/in for physical testing.
+- **Wrong user auto-logs in:** verify `lab_student_user` in private inventory;
+  never set it to `labadmin`.
+- **Auto-login was configured for labadmin:** disable it with playbook 13,
+  correct the student variable, then configure it again for the classroom user.
+- **GDM3 custom.conf is missing or malformed:** run playbook 12 again after
+  checking `/etc/gdm3/custom.conf`; it manages a clearly marked block.
+- **Display manager is unsupported:** use GDM3 or LightDM, or set
+  `student_autologin_display_manager` explicitly only for an installed one.
+- **Student still has sudo after auto-login:** auto-login does not change sudo;
+  inspect with playbook 09 and revoke it with playbook 10 if appropriate.
+- **Need to disable auto-login:** run playbook 13, then reboot or log out and
+  confirm that the graphical login screen appears.
+
+# Current Deployment Checks
+
+- **`./labmanage: Permission denied`:** run `chmod +x labmanage`. Before
+  committing from Ubuntu, also run `git update-index --chmod=+x labmanage`.
+- **`inventory.ini` missing:** copy `inventory.example.ini` locally, add real
+  private host details, and do not commit it.
+- **labadmin SSH or sudo fails:** stop before revoking student sudo. Re-run
+  playbook 08 if needed, then test Ansible ping and `whoami -b` as labadmin.
+- **Auto-login does not work or selects the wrong user:** verify
+  `lab_student_user`, display-manager detection, and the physical desktop after
+  reboot/logout. Never set the student account to labadmin.
+- **Display manager is unsupported or ambiguous:** set
+  `student_autologin_display_manager` to `gdm3` or `lightdm` only after
+  confirming the installed manager.
+- **SSH authenticity concern:** `host_key_checking = False` is a convenience
+  trade-off. Verify host identity through a trusted lab process.
+- **A log exists but the action failed:** inspect the Ansible recap and the
+  saved log. A report records output; it does not make a failed action succeed.

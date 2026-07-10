@@ -1,105 +1,85 @@
-# Lab Test Plan
+# Controlled Lab Test Plan
 
-## 1. Purpose
+## Status
 
-This document defines the safe testing order and procedures for the Ansible Linux/Ubuntu Lab Management toolkit. It is intended to guide a junior administrator or teaching assistant through step-by-step verification on the teacher/main computer before applying changes to all student PCs.
+Controlled `pc1` testing is pending. Do not treat this plan as evidence that
+syntax checks, auto-login, or full-lab operation have already succeeded.
 
-## 2. Pre-Test Checklist
+## Safety rule
 
-- Confirm you are on the teacher/main computer (the Ansible control node).
-- Confirm Ansible is installed and accessible (`ansible --version`).
-- Confirm the real `inventory.ini` exists on the teacher/main computer.
-- Confirm `inventory.ini` is not uploaded to GitHub or a public repo.
-- Confirm `config/lab_settings.yml` contains only safe, non-secret settings.
-- Confirm SSH key-based access works and passwordless SSH is set up.
-- Confirm at least one student PC is online and reachable.
-- Confirm the professor or responsible instructor approves any update, install, cleanup, or reboot operation.
-- Avoid testing during active class time or when students are using lab machines.
+Do not start with all PCs. Test `pc1`, then a small group, and only then
+consider the full `students` group during an approved maintenance window.
 
-## 3. Safety Rule
-
-Always test playbooks on a single, representative student PC first using `--limit` before running against the entire `students` group. This prevents accidental mass changes.
-
-Example:
+## Ubuntu PC0 preparation
 
 ```bash
-ansible-playbook -i inventory.ini playbooks/01_check_connection.yml --limit pc01
+cd ~/ansible-ubuntu-lab-management
+git pull origin main
+chmod +x labmanage
+git update-index --chmod=+x labmanage
+
+bash -n labmanage
+bash -n scripts/manage_lab.sh
+bash -n scripts/run_with_logging.sh
+
+for f in playbooks/*.yml; do
+  ansible-playbook --syntax-check "$f" || break
+done
 ```
 
-## 4. Recommended Test Order
+Do not continue if any syntax check fails. Keep `inventory.ini` private and
+confirm that `pc1` uses `ansible_user=labadmin` and the correct
+`lab_student_user`.
 
-1. `00_preflight_check.yml` to verify inventory, connectivity, Python, sudo, OS, disk, memory, and host identity before any risky action.
-2. Review `config/lab_settings.yml` if package, copy, update, cleanup, threshold, or reboot settings were changed.
-3. Manual Ansible ping (`ansible -i inventory.ini students -m ping`) to confirm baseline connectivity.
-4. `01_check_connection.yml` to verify Ansible ping via a playbook.
-5. `02_collect_lab_status.yml` to collect read-only system information.
-6. `04_install_required_software.yml` on one PC first (`--limit pc01`) to verify package installation.
-7. `05_copy_shared_materials.yml` on one PC first (`--limit pc01`) to verify file distribution and permissions.
-8. `03_update_system.yml` only after explicit approval from the professor; run on one PC first.
-9. `06_clean_lab_computers.yml` only after the update playbook is verified on at least one PC.
-10. `07_reboot_if_required.yml` only when it is safe and approved; test on one PC first.
+## Controlled pc1 sequence
 
-## 5. Commands to Run
+1. Confirm labadmin connectivity.
 
-Copyable commands for common test steps:
+   ```bash
+   ansible -i inventory.ini pc1 -u labadmin -m ping
+   ansible -i inventory.ini pc1 -u labadmin -m command -a "whoami" -b --ask-become-pass
+   ```
 
-```bash
-ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml
-ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml --limit pc01
-ansible-playbook -i inventory.ini playbooks/00_preflight_check.yml --ask-pass --ask-become-pass
-ansible -i inventory.ini students -m ping
-ansible-playbook -i inventory.ini playbooks/01_check_connection.yml
-ansible-playbook -i inventory.ini playbooks/02_collect_lab_status.yml
-ansible-playbook -i inventory.ini playbooks/04_install_required_software.yml --limit pc01
-ansible-playbook -i inventory.ini playbooks/05_copy_shared_materials.yml --limit pc01
-ansible-playbook -i inventory.ini playbooks/03_update_system.yml --limit pc01
-bash scripts/run_with_logging.sh playbooks/00_preflight_check.yml
-./labmanage
-```
+   Expected sudo result: `root`.
 
-## 6. What to Record During Testing
+2. Inspect privileges.
 
-Record the following for every test:
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin
+   ```
 
-- Date and time
-- Which PC was tested (use the inventory `name`)
-- Which command or playbook was run
-- Whether the run succeeded or failed
-- Any error messages or stack traces
-- Any machine that was offline or unreachable
-- Any machine that requires manual intervention after the run
+   Expected hardened state: labadmin has sudo; the classroom user does not.
 
-## 7. When to Stop
+3. If the classroom user still has sudo, revoke it only after step 1 succeeds.
 
-Stop testing and escalate to the professor or lab administrator if any of the following occur:
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/10_revoke_student_sudo.yml --limit pc1 -u labadmin --ask-become-pass
+   ansible-playbook -i inventory.ini playbooks/09_check_user_privileges.yml --limit pc1 -u labadmin
+   ```
 
-- SSH fails on multiple machines unexpectedly
-- `sudo` prompts for a password when it should not
-- A playbook modifies or affects the wrong directory
-- Package installation fails consistently on multiple PCs
-- Network instability or frequent timeouts appear
-- The professor or instructor requests a pause
+4. Configure auto-login for the classroom user, never labadmin.
 
-## 8. After Successful Testing
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/12_configure_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
 
-Once a playbook has been validated on one PC:
+5. Reboot or log out during a maintenance window and physically verify that
+   `pc1` opens the student desktop, not labadmin.
 
-- Run the same playbook on all reachable student PCs with confidence, using the normal inventory.
-- Save important terminal output in `reports/` using `scripts/run_with_logging.sh`.
-- Fill `FINAL_TEST_REPORT.md` after the final real-lab validation.
-- Update `PROJECT_STATUS.md` to record the test outcome and progress.
-- Document any manual steps or workarounds observed during testing in `docs/troubleshooting.md`.
+6. Confirm Ansible still works after the reboot/logout.
 
-## 9. GitHub Safety Notes
+   ```bash
+   ansible -i inventory.ini pc1 -u labadmin -m ping
+   ```
 
-- Do not commit `inventory.ini` to the repository.
-- Do not commit private SSH keys or key files.
-- Do not commit passwords or secrets.
-- Use `inventory.example.ini` for public documentation and examples.
-- Keep real lab-specific configuration on the teacher/main PC or in a private local copy only.
-- Keep `config/lab_settings.yml` free of secrets so it can remain trackable.
+7. Disable auto-login if needed and verify the normal login screen.
 
+   ```bash
+   ansible-playbook -i inventory.ini playbooks/13_disable_student_autologin.yml --limit pc1 -u labadmin --ask-become-pass
+   ```
 
----
+## Record
 
-This plan is written for clarity and safe operation by junior administrators during an Erasmus internship. Follow it carefully and consult the professor for any uncertainty.
+For each run, record the date, host, command, result, unreachable hosts,
+display manager detected, and any manual action. Save logs with
+`scripts/run_with_logging.sh`, but review them before sharing.

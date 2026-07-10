@@ -110,8 +110,8 @@ Example:
 
 ```ini
 [students]
-pc1 ansible_host=192.168.1.101 ansible_user=student
-pc2 ansible_host=192.168.1.102 ansible_user=student
+pc1 ansible_host=192.168.1.101 ansible_user=labadmin lab_student_user=student123
+pc2 ansible_host=192.168.1.102 ansible_user=labadmin lab_student_user=student123
 ```
 
 Each line contains:
@@ -120,6 +120,7 @@ Each line contains:
 pc1                 = local Ansible name for the computer
 ansible_host        = IP address of the computer
 ansible_user        = Linux username used for SSH
+lab_student_user    = classroom account used for student-facing tasks
 ```
 
 The real inventory file is called:
@@ -518,9 +519,9 @@ Example format:
 
 ```ini
 [students]
-pc1 ansible_host=192.168.1.101 ansible_user=student
-pc2 ansible_host=192.168.1.102 ansible_user=student
-pc3 ansible_host=172.16.0.149 ansible_user=students
+pc1 ansible_host=192.168.1.101 ansible_user=labadmin lab_student_user=student123
+pc2 ansible_host=192.168.1.102 ansible_user=labadmin lab_student_user=student123
+pc3 ansible_host=172.16.0.149 ansible_user=labadmin lab_student_user=student123
 ```
 
 Rules:
@@ -945,3 +946,22 @@ Playbooks are tested
 Documentation is clear
 Future users can continue the project
 ```
+
+## Current Privilege and Auto-Login Setup
+
+On Ubuntu PC0, retain the launcher executable bit:
+
+```bash
+chmod +x labmanage
+git update-index --chmod=+x labmanage
+```
+
+Use a private inventory entry such as:
+
+```ini
+pc1 ansible_host=192.168.x.x ansible_user=labadmin lab_student_user=student123
+```
+
+Run the syntax checks in `LAB_TEST_PLAN.md`, then test pc1 first. Set up and
+test labadmin before revoking student sudo. Configure graphical auto-login only
+for the classroom account, then physically verify it after reboot/logout.

@@ -134,8 +134,8 @@ Example:
 
 ```ini
 [students]
-pc1 ansible_host=192.168.1.101 ansible_user=student
-pc2 ansible_host=192.168.1.102 ansible_user=student
+pc1 ansible_host=192.168.1.101 ansible_user=labadmin lab_student_user=student123
+pc2 ansible_host=192.168.1.102 ansible_user=labadmin lab_student_user=student123
 ```
 
 Do not commit `inventory.ini`.
